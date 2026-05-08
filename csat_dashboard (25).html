@@ -1,0 +1,2310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSAT Performance Dashboard</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg-card: #FFFFFF;
+    --bg-soft: #F4F2FE;
+    --hero-grad: linear-gradient(135deg, #6B5DD6 0%, #8B7FE8 100%);
+    --accent: #6B5DD6;
+    --accent-dark: #5448B5;
+    --accent-light: #B5ACEF;
+    --text: #1F1B3A;
+    --text-soft: #6B6786;
+    --text-muted: #9D9AB3;
+    --border: rgba(107, 93, 214, 0.14);
+    --border-strong: rgba(107, 93, 214, 0.28);
+    --gold: #F4B942;
+    --silver: #B8B5C7;
+    --bronze: #D88B5C;
+    --success: #4DBD8B;
+    --success-bg: #E0F4EB;
+    --danger: #E55A5A;
+    --danger-bg: #FBE5E5;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #FFFFFF;
+    color: var(--text);
+    margin: 0; padding: 0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  .container { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; }
+  /* Wider container just for the dashboard, to accommodate the side panel */
+  .container.with-side { max-width: 1240px; }
+  .dashboard-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 24px;
+    align-items: start;
+  }
+  .dashboard-side {
+    position: sticky; top: 16px;
+    /* No internal scroll cap — show the full quest list at all times */
+  }
+  @media (max-width: 1080px) {
+    .dashboard-layout { grid-template-columns: 1fr; }
+    .dashboard-side { position: static; }
+  }
+
+  /* Top nav */
+  .top-nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 24px; background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 50;
+    box-shadow: 0 2px 8px rgba(107, 93, 214, 0.04);
+  }
+  .top-nav-inner { max-width: 920px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 16px; }
+  .brand {
+    font-size: 14px; font-weight: 700; color: var(--accent-dark);
+    letter-spacing: -0.01em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .brand-dot {
+    width: 24px; height: 24px; border-radius: 8px;
+    background: var(--hero-grad);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: white; font-size: 13px;
+  }
+  .nav-actions { display: flex; gap: 8px; }
+  .nav-btn {
+    height: 36px; padding: 0 16px; font-size: 13px; font-weight: 500;
+    font-family: inherit; background: var(--bg-soft);
+    border: 1px solid transparent; border-radius: 10px;
+    color: var(--text); cursor: pointer; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .nav-btn:hover { background: white; border-color: var(--border-strong); }
+  .nav-btn.active { background: var(--hero-grad); color: white; box-shadow: 0 2px 8px rgba(107, 93, 214, 0.3); }
+  .data-status {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    font-weight: 600; letter-spacing: 0.02em;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .data-status.live {
+    background: var(--success-bg); color: #1F6E48;
+  }
+  .data-status.live::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success); animation: pulse-dot 2s infinite;
+  }
+  .data-status.loading {
+    background: #FFF3D6; color: #8B6914;
+  }
+  .data-status.error {
+    background: var(--danger-bg); color: var(--danger);
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .nav-btn.spinning, .reset-btn.spinning { opacity: 0.6; pointer-events: none; }
+  .nav-btn.spinning::before, .reset-btn.spinning::before {
+    content: ''; display: inline-block; width: 10px; height: 10px;
+    border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; margin-right: 6px;
+    animation: spin 0.8s linear infinite;
+    vertical-align: -1px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #refresh-btn { color: var(--accent-dark); }
+  #refresh-btn:hover { color: var(--text); }
+
+  .header { margin-bottom: 24px; padding: 0 4px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin-bottom: 8px;
+  }
+  h1 { font-size: 30px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.02em; color: var(--text); }
+  .subtitle { font-size: 14px; color: var(--text-soft); margin: 0; }
+
+  /* Active quests banner */
+  .active-quests-banner {
+    background: var(--hero-grad);
+    border-radius: 20px;
+    padding: 22px 24px;
+    margin-bottom: 24px;
+    color: white;
+    box-shadow: 0 8px 32px rgba(107, 93, 214, 0.25);
+    position: relative; overflow: hidden;
+  }
+  .active-quests-banner::before {
+    content: ''; position: absolute; top: -50%; right: -20%;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .active-quests-banner.empty {
+    background: var(--bg-card); color: var(--text);
+    box-shadow: 0 2px 12px rgba(107, 93, 214, 0.08);
+    border: 1px solid var(--border);
+  }
+  .active-quests-banner.empty::before { display: none; }
+  .active-quests-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px; position: relative;
+  }
+  .active-quests-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; display: flex; align-items: center; gap: 10px;
+  }
+  .active-quests-title .pulse {
+    width: 8px; height: 8px; border-radius: 50%; background: #FFD93D;
+    box-shadow: 0 0 0 0 rgba(255, 217, 61, 0.6);
+    animation: pulse 2s infinite;
+  }
+  .active-quests-banner.empty .active-quests-title .pulse {
+    background: var(--text-muted); box-shadow: none; animation: none;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 217, 61, 0.7); }
+    70% { box-shadow: 0 0 0 8px rgba(255, 217, 61, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 217, 61, 0); }
+  }
+  .active-quests-count { font-size: 12px; opacity: 0.85; font-weight: 500; }
+  .active-quest-pill {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    padding: 8px 14px 8px 14px;
+    font-size: 13px; margin-right: 8px; margin-bottom: 8px;
+  }
+  .active-quest-pill strong { font-weight: 600; }
+  .active-quest-pill .emoji { font-size: 16px; }
+  .active-quest-pill .pts {
+    font-size: 11px; background: #FFD93D; color: #5448B5;
+    padding: 3px 9px; border-radius: 999px; font-weight: 700;
+  }
+  .active-quests-empty-text { font-size: 13px; color: var(--text-soft); margin: 0; line-height: 1.6; }
+  .active-quests-banner:not(.empty) .active-quests-empty-text { color: rgba(255, 255, 255, 0.9); }
+
+  /* Side panel: vertical stacked quest cards (replaces horizontal pills) */
+  .dashboard-side .active-quests-banner { margin-bottom: 0; padding: 18px 18px; }
+  .quest-card-mini {
+    display: block;
+    background: rgba(255, 255, 255, 0.16);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    color: white;
+    position: relative;
+  }
+  .quest-card-mini:last-child { margin-bottom: 0; }
+  .quest-card-mini-top {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  }
+  .quest-card-mini-emoji { font-size: 26px; line-height: 1; }
+  .quest-card-mini-name {
+    font-size: 13px; font-weight: 700; flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .quest-card-mini-pts {
+    font-size: 10px; background: #FFD93D; color: #5448B5;
+    padding: 2px 7px; border-radius: 999px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .quest-card-mini-meta {
+    font-size: 11px; opacity: 0.85; line-height: 1.5;
+  }
+  .quest-card-mini-cat {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
+    font-weight: 700; opacity: 0.8; margin-bottom: 4px;
+  }
+  .quest-side-cat-group { margin-bottom: 14px; }
+  .quest-side-cat-group:last-child { margin-bottom: 0; }
+  .quest-side-cat-heading {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    font-weight: 700; opacity: 0.85; margin: 4px 2px 8px;
+  }
+
+  /* Filters */
+  .filters {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(107, 93, 214, 0.05);
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 150px; }
+  .filter-label {
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); font-weight: 600;
+  }
+  select, input[type="date"], input[type="text"], input[type="number"], input[type="password"] {
+    height: 40px; padding: 0 14px; font-size: 14px; font-family: inherit;
+    background: var(--bg-soft); border: 1px solid transparent;
+    border-radius: 10px; color: var(--text); transition: all 0.15s;
+  }
+  select, input[type="date"] { cursor: pointer; }
+  select:hover, input[type="date"]:hover, input[type="text"]:hover, input[type="number"]:hover, input[type="password"]:hover {
+    background: white; border-color: var(--border-strong);
+  }
+  select:focus, input:focus {
+    outline: none; background: white; border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(107, 93, 214, 0.1);
+  }
+  .reset-btn {
+    height: 40px; padding: 0 16px; font-size: 13px; font-weight: 500;
+    font-family: inherit; background: var(--bg-soft); border: 1px solid transparent;
+    border-radius: 10px; color: var(--text-soft); cursor: pointer; transition: all 0.15s;
+  }
+  .reset-btn:hover { background: white; border-color: var(--border-strong); color: var(--text); }
+  .primary-btn {
+    height: 40px; padding: 0 20px; font-size: 13px; font-weight: 600;
+    font-family: inherit; background: var(--hero-grad); border: none;
+    border-radius: 10px; color: white; cursor: pointer; transition: all 0.15s;
+    box-shadow: 0 2px 8px rgba(107, 93, 214, 0.3);
+  }
+  .primary-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(107, 93, 214, 0.4); }
+  .primary-btn:disabled { background: var(--text-muted); cursor: not-allowed; transform: none; box-shadow: none; }
+  .secondary-btn {
+    height: 36px; padding: 0 14px; font-size: 13px; font-weight: 500;
+    font-family: inherit; background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); cursor: pointer; transition: all 0.15s;
+  }
+  .secondary-btn:hover { background: white; border-color: var(--border-strong); }
+
+  /* Top metrics */
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
+  @media (max-width: 720px) {
+    .metrics { grid-template-columns: 1fr; }
+  }
+  .metric {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 20px 22px;
+    box-shadow: 0 2px 12px rgba(107, 93, 214, 0.05);
+  }
+  .metric-label {
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 8px; font-weight: 600;
+  }
+  .metric-value {
+    font-size: 32px; font-weight: 600; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--text);
+  }
+  .metric-value .unit { font-size: 14px; color: var(--text-muted); font-weight: 400; }
+  .metric-sub { font-size: 12px; color: var(--text-soft); margin-top: 4px; }
+
+  /* Section card */
+  .section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(107, 93, 214, 0.05);
+  }
+  .section-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 16px; gap: 12px;
+  }
+  h2 { font-size: 17px; font-weight: 600; margin: 0; color: var(--text); }
+  .section-meta {
+    font-size: 11px; color: var(--text-muted); letter-spacing: 0.06em;
+    text-transform: uppercase; font-weight: 600;
+  }
+
+  /* Distribution bar */
+  .dist-bar {
+    display: flex; height: 12px; border-radius: 6px; overflow: hidden;
+    margin-bottom: 12px; background: var(--bg-soft);
+  }
+  .dist-bar > div { transition: width 0.4s ease; }
+  .dist-legend {
+    display: flex; justify-content: space-between; font-size: 12px;
+    color: var(--text-soft); font-variant-numeric: tabular-nums;
+  }
+  .dist-legend span span { font-weight: 600; margin-right: 5px; }
+
+  /* Top 3 podium */
+  .podium {
+    background: var(--hero-grad);
+    border-radius: 20px;
+    padding: 28px 16px 20px;
+    margin-bottom: 16px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: end;
+    position: relative; overflow: hidden;
+  }
+  .podium::before {
+    content: ''; position: absolute; top: -30%; left: -10%;
+    width: 250px; height: 250px;
+    background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .podium::after {
+    content: ''; position: absolute; bottom: -50%; right: -10%;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .podium-slot { text-align: center; position: relative; }
+  .podium-avatar {
+    width: 84px; height: 84px; border-radius: 50%;
+    background: white;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; font-weight: 700; color: var(--accent-dark);
+    margin: 0 auto 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    border: 4px solid white;
+  }
+  .podium-slot.first .podium-avatar {
+    width: 96px; height: 96px; font-size: 28px;
+    border-color: var(--gold);
+    background: linear-gradient(135deg, #FFF8E1 0%, #FFE89A 100%);
+    box-shadow: 0 6px 22px rgba(244, 185, 66, 0.4);
+  }
+  .podium-slot.second .podium-avatar {
+    border-color: var(--silver);
+    background: linear-gradient(135deg, #F5F3F8 0%, #DAD5E8 100%);
+  }
+  .podium-slot.third .podium-avatar {
+    border-color: var(--bronze);
+    background: linear-gradient(135deg, #FBE6D8 0%, #F0C4A4 100%);
+  }
+  .podium-name {
+    font-size: 13px; font-weight: 600; color: white; margin-bottom: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .podium-score {
+    font-size: 11px; color: rgba(255,255,255,0.85);
+    font-variant-numeric: tabular-nums; margin-bottom: 8px;
+  }
+  .podium-points {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(255, 217, 61, 0.95);
+    color: #5448B5;
+    padding: 3px 10px; border-radius: 999px;
+    font-weight: 700; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    margin: 0 0 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .podium-badges {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    gap: 4px; margin-bottom: 10px; min-height: 20px;
+  }
+  .podium-badge {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(255,255,255,0.95);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+  .podium-badges-overflow {
+    background: rgba(255,255,255,0.95);
+    border-radius: 999px; padding: 0 8px;
+    height: 26px; display: inline-flex; align-items: center;
+    font-size: 11px; font-weight: 600; color: #5448B5;
+  }
+  .podium-rank {
+    background: rgba(255,255,255,0.2); backdrop-filter: blur(10px);
+    border-radius: 12px 12px 0 0; padding: 14px 0;
+    font-size: 24px; font-weight: 700; color: white; letter-spacing: -0.02em;
+  }
+  .podium-slot.first .podium-rank {
+    padding: 22px 0; background: rgba(255, 217, 61, 0.25); font-size: 30px;
+  }
+  .podium-slot.second .podium-rank { padding: 18px 0; }
+
+  /* Leaderboard rows */
+  .row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 12px; border-radius: 12px;
+    margin-bottom: 4px; transition: background 0.15s;
+  }
+  .row:hover { background: var(--bg-soft); }
+  .rank {
+    width: 30px; font-size: 14px; color: var(--text-muted);
+    text-align: center; font-variant-numeric: tabular-nums; font-weight: 600;
+  }
+  .avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--bg-soft);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 700; color: var(--accent-dark);
+    flex-shrink: 0;
+    border: 3px solid white;
+    box-shadow: 0 3px 10px rgba(107, 93, 214, 0.15);
+  }
+  .avatar.gold {
+    background: linear-gradient(135deg, #FFF8E1 0%, #FFE89A 100%);
+    color: #8B6914;
+    border-color: var(--gold);
+    box-shadow: 0 3px 12px rgba(244, 185, 66, 0.35);
+  }
+  .avatar.silver {
+    background: linear-gradient(135deg, #F5F3F8 0%, #DAD5E8 100%);
+    color: #4A4660;
+    border-color: var(--silver);
+  }
+  .avatar.bronze {
+    background: linear-gradient(135deg, #FBE6D8 0%, #F0C4A4 100%);
+    color: #8B4A1F;
+    border-color: var(--bronze);
+  }
+  .avatar.danger {
+    background: var(--danger-bg);
+    color: var(--danger);
+    border-color: rgba(229, 90, 90, 0.3);
+  }
+  .row-info { flex: 1; min-width: 0; }
+  .row-name-line {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .row-name {
+    font-size: 15px; font-weight: 600; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row-emoji-badges {
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+    margin-top: 6px;
+  }
+  .row-emoji-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px 3px 6px;
+    font-size: 11px; font-weight: 600;
+    color: var(--accent-dark);
+    max-width: 200px;
+  }
+  .row-emoji-badge .emoji {
+    font-size: 18px; line-height: 1;
+  }
+  .row-emoji-badge .name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row-emoji-overflow {
+    font-size: 10px; font-weight: 600; color: var(--text-muted);
+    background: var(--bg-soft); border-radius: 999px;
+    padding: 0 8px; height: 24px;
+    display: inline-flex; align-items: center;
+  }
+  .row-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .points-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: linear-gradient(135deg, #FFE89A 0%, #FFD93D 100%);
+    color: #5448B5;
+    padding: 2px 8px; border-radius: 999px;
+    font-weight: 700; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid rgba(244, 185, 66, 0.5);
+  }
+  .points-pill.has-bonus {
+    background: linear-gradient(135deg, #B5ACEF 0%, #8B7FE8 100%);
+    color: white;
+    border-color: rgba(107, 93, 214, 0.5);
+  }
+  .row-stats { text-align: right; }
+  .row-avg { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+  .row-pct { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 4px; margin-bottom: 16px;
+    background: var(--bg-soft); padding: 4px; border-radius: 12px;
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 9px 14px; font-size: 13px; background: transparent;
+    border: none; border-radius: 8px; color: var(--text-soft);
+    cursor: pointer; font-family: inherit; transition: all 0.15s;
+    font-weight: 500; flex: 1; min-width: 70px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: white; background: var(--hero-grad); font-weight: 600;
+    box-shadow: 0 2px 8px rgba(107, 93, 214, 0.3);
+  }
+
+  .scroll-list { max-height: 600px; overflow-y: auto; padding-right: 4px; }
+  .scroll-list::-webkit-scrollbar { width: 6px; }
+  .scroll-list::-webkit-scrollbar-track { background: transparent; }
+  .scroll-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+  .empty {
+    padding: 48px 24px; text-align: center; color: var(--text-muted);
+    font-size: 14px; background: var(--bg-soft); border-radius: 12px;
+  }
+
+  .points-explainer {
+    background: linear-gradient(135deg, #F4F2FE 0%, #EBE7FB 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--text-soft);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .points-explainer strong { color: var(--accent-dark); font-weight: 600; }
+  .points-explainer .star { color: var(--gold); }
+
+  /* Quest lock */
+  .lock-overlay { text-align: center; padding: 60px 24px; }
+  .lock-icon {
+    width: 56px; height: 56px; margin: 0 auto 18px;
+    background: var(--hero-grad); border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; box-shadow: 0 4px 16px rgba(107, 93, 214, 0.3);
+  }
+  .lock-title { font-size: 18px; font-weight: 600; margin: 0 0 6px; color: var(--text); }
+  .lock-sub { font-size: 13px; color: var(--text-soft); margin: 0 0 20px; }
+  .lock-form { display: flex; gap: 8px; max-width: 340px; margin: 0 auto; }
+  .lock-form input { flex: 1; }
+  .lock-error { color: var(--danger); font-size: 12px; margin-top: 12px; min-height: 16px; }
+
+  /* Quest form */
+  .form-card {
+    background: var(--bg-soft); border-radius: 16px;
+    padding: 22px; margin-bottom: 20px;
+  }
+  .form-card h3 { font-size: 15px; font-weight: 600; margin: 0 0 16px; color: var(--text); }
+  .form-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;
+  }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-grid label { display: block; }
+  .form-grid input { width: 100%; margin-top: 6px; background: white; }
+  .form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* Emoji picker */
+  .emoji-pick {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;
+    padding: 8px; background: white; border-radius: 10px;
+  }
+  .emoji-pick label {
+    width: 38px; height: 38px; border-radius: 8px;
+    background: var(--bg-soft); border: 2px solid transparent;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 20px; transition: all 0.15s;
+  }
+  .emoji-pick label:hover { background: white; border-color: var(--border-strong); }
+  .emoji-pick label.selected {
+    border-color: var(--accent); background: white;
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(107, 93, 214, 0.2);
+  }
+
+  /* Quest category section heading */
+  .quest-category-heading {
+    margin: 24px 0 10px; padding: 0 4px;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 8px;
+  }
+  .quest-category-heading:first-child { margin-top: 0; }
+  .quest-category-heading h3 {
+    margin: 0; font-size: 15px; font-weight: 700;
+    color: var(--accent-dark); letter-spacing: 0.02em;
+    text-transform: uppercase;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .quest-cat-count {
+    background: var(--bg-soft); color: var(--accent-dark);
+    font-size: 11px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px;
+    text-transform: none; letter-spacing: 0;
+  }
+
+  /* Quest card */
+  .quest-card {
+    background: white; border: 1px solid var(--border);
+    border-radius: 16px; padding: 18px 20px; margin-bottom: 12px;
+    transition: all 0.15s;
+  }
+  .quest-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 4px 16px rgba(107, 93, 214, 0.08);
+  }
+  .quest-card.complete {
+    background: linear-gradient(135deg, #F0FAF5 0%, #E0F4EB 100%);
+    border-color: var(--success);
+  }
+  .quest-card.expired { opacity: 0.6; }
+  .quest-top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 12px; margin-bottom: 14px;
+  }
+  .quest-emoji-circle {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: var(--bg-soft);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+    border: 1px solid var(--border);
+  }
+  .quest-card.complete .quest-emoji-circle {
+    background: white; border-color: var(--success);
+  }
+  .quest-title-block { flex: 1; min-width: 0; }
+  .quest-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; color: var(--text); }
+  .quest-meta { font-size: 12px; color: var(--text-soft); }
+  .quest-status-badge {
+    font-size: 10px; padding: 5px 10px; border-radius: 999px;
+    letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700;
+    background: var(--accent-light); color: var(--accent-dark); flex-shrink: 0;
+  }
+  .quest-status-badge.complete { background: var(--success); color: white; }
+  .quest-status-badge.expired { background: var(--bg-soft); color: var(--text-muted); }
+  .quest-status-badge.upcoming { background: #FFF3D6; color: #8B6914; }
+  .quest-progress-bar {
+    height: 8px; background: var(--bg-soft); border-radius: 4px;
+    overflow: hidden; margin-bottom: 10px;
+  }
+  .quest-progress-fill {
+    height: 100%; background: var(--success); transition: width 0.4s ease; border-radius: 4px;
+  }
+  .quest-progress-fill.partial { background: var(--hero-grad); }
+  .quest-stats {
+    display: flex; justify-content: space-between; font-size: 12px;
+    color: var(--text-soft); font-variant-numeric: tabular-nums; margin-bottom: 12px;
+  }
+  .quest-stats strong { color: var(--text); font-weight: 600; }
+  .quest-leaders { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+  .quest-leader-label {
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 8px; font-weight: 600;
+  }
+  .quest-leader-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13px; }
+  .quest-leader-rank {
+    width: 18px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+    font-size: 12px; font-weight: 600;
+  }
+  .quest-leader-name { flex: 1; color: var(--text); }
+  .quest-leader-stats { color: var(--text-soft); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .quest-leader-stats strong { color: var(--text); font-weight: 600; }
+  .quest-actions {
+    display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .small-btn {
+    height: 30px; padding: 0 12px; font-size: 12px; font-weight: 500;
+    font-family: inherit; background: var(--bg-soft); border: 1px solid transparent;
+    border-radius: 8px; cursor: pointer; transition: all 0.15s; color: var(--text);
+  }
+  .small-btn:hover { background: white; border-color: var(--border-strong); }
+  .small-btn.delete { color: var(--danger); }
+  .small-btn.delete:hover { background: var(--danger-bg); border-color: var(--danger); }
+  .empty-state {
+    text-align: center; padding: 48px 24px; color: var(--text-muted);
+    font-size: 14px; background: var(--bg-soft); border-radius: 12px;
+  }
+  .empty-state h3 { color: var(--text); margin: 0 0 8px; }
+  .loading { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
+  .form-error { color: var(--danger); font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .hidden { display: none !important; }
+
+  /* Page filter tabs on quest admin */
+  .quest-filter-tabs {
+    display: flex; gap: 4px; margin-bottom: 16px;
+    background: var(--bg-soft); padding: 4px; border-radius: 12px;
+  }
+  .quest-filter-tab {
+    padding: 9px 16px; font-size: 13px; background: transparent;
+    border: none; border-radius: 8px; color: var(--text-soft);
+    cursor: pointer; font-family: inherit; transition: all 0.15s;
+    font-weight: 500; flex: 1;
+  }
+  .quest-filter-tab:hover { color: var(--text); }
+  .quest-filter-tab.active {
+    color: white; background: var(--hero-grad); font-weight: 600;
+  }
+  .quest-filter-tab .count {
+    background: rgba(255,255,255,0.25);
+    padding: 1px 7px; border-radius: 999px;
+    font-size: 11px; margin-left: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .quest-filter-tab:not(.active) .count {
+    background: var(--bg-card);
+    color: var(--text-muted);
+  }
+
+  /* Page transitions */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  @media (max-width: 540px) {
+    .container { padding: 20px 14px 48px; }
+    .top-nav { padding: 12px 16px; }
+    h1 { font-size: 24px; }
+    .podium { gap: 6px; padding: 22px 8px 16px; }
+    .podium-avatar { width: 64px; height: 64px; font-size: 18px; }
+    .podium-slot.first .podium-avatar { width: 76px; height: 76px; font-size: 22px; }
+    .podium-name { font-size: 11px; }
+    .podium-rank { font-size: 18px; padding: 10px 0; }
+    .podium-slot.first .podium-rank { font-size: 24px; padding: 16px 0; }
+    .form-grid { grid-template-columns: 1fr; }
+    .metrics { grid-template-columns: 1fr; }
+    .metric-value { font-size: 26px; }
+    .avatar { width: 48px; height: 48px; font-size: 15px; }
+    .nav-btn { padding: 0 12px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <div class="top-nav-inner">
+    <div class="brand">
+      <span class="brand-dot">★</span>
+      <span>CSAT Dashboard</span>
+      <span class="data-status" id="data-status" title="Data source"></span>
+    </div>
+    <div class="nav-actions">
+      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="quests-admin">Manage quests</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ========== PAGE: DASHBOARD ========== -->
+<div class="page active" id="page-dashboard">
+<div class="container with-side">
+  <div class="header">
+    <div class="eyebrow" id="period-label">April 2026</div>
+    <h1>CSAT Leaderboard</h1>
+    <p class="subtitle" id="subtitle">All teams · all representatives</p>
+  </div>
+
+  <div class="dashboard-layout">
+    <div class="dashboard-main">
+
+  <div class="filters">
+    <div class="filter-group">
+      <label class="filter-label" for="team-select">Team</label>
+      <select id="team-select"><option value="">All teams</option></select>
+    </div>
+    <div class="filter-group">
+      <label class="filter-label" for="from-date">From</label>
+      <input type="date" id="from-date">
+    </div>
+    <div class="filter-group">
+      <label class="filter-label" for="to-date">To</label>
+      <input type="date" id="to-date">
+    </div>
+    <button class="reset-btn" id="reset-btn">Reset</button>
+    <button class="reset-btn" id="refresh-btn" title="Re-pull data from your Google Sheet now">↻ Refresh data</button>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">CSATs completed</div>
+      <div class="metric-value" id="m-total">0</div>
+      <div class="metric-sub" id="m-total-sub">total responses</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">CSAT transfers made</div>
+      <div class="metric-value" id="m-transfers">0</div>
+      <div class="metric-sub" id="m-transfers-sub">no transfers in selection</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Average score</div>
+      <div class="metric-value"><span id="m-avg">0</span><span class="unit"> / 5</span></div>
+      <div class="metric-sub">across selection</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Score distribution</h2>
+      <span class="section-meta" id="dist-meta">All responses</span>
+    </div>
+    <div class="dist-bar" id="dist-bar"></div>
+    <div class="dist-legend" id="dist-legend"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2 id="board-title">Top performers</h2>
+      <span class="section-meta" id="board-meta">Min 3 responses</span>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-view="top">Top 10</button>
+      <button class="tab" data-view="bottom">Bottom 10</button>
+      <button class="tab" data-view="volume">By volume</button>
+      <button class="tab" data-view="points">By points</button>
+      <button class="tab" data-view="all">All agents</button>
+    </div>
+    <div class="points-explainer">
+      <span><strong>Points system:</strong> 1 pt per <span class="star">★</span> 5-star rating + bonus points from completed quests. Quest emoji badges appear next to agent names when earned.</span>
+    </div>
+    <div id="podium-container"></div>
+    <div id="leaderboard"></div>
+  </div>
+    </div><!-- /.dashboard-main -->
+
+    <aside class="dashboard-side">
+      <div id="active-quests-banner" class="active-quests-banner empty">
+        <div class="active-quests-header">
+          <div class="active-quests-title">
+            <span class="pulse"></span>
+            Active quests
+          </div>
+          <div class="active-quests-count" id="active-quests-count">No active</div>
+        </div>
+        <div id="active-quests-content">
+          <p class="active-quests-empty-text">No active quests right now. Click "Manage quests" up top to create one.</p>
+        </div>
+      </div>
+    </aside>
+
+  </div><!-- /.dashboard-layout -->
+</div>
+</div>
+
+<!-- ========== PAGE: QUEST ADMIN ========== -->
+<div class="page" id="page-quests-admin">
+<div class="container">
+
+  <div class="header">
+    <div class="eyebrow">Admin</div>
+    <h1>Manage quests</h1>
+    <p class="subtitle">Create challenges, set targets, and award bonus points + an emoji badge to agents who hit the goal in time.</p>
+  </div>
+
+  <!-- Locked view -->
+  <div id="quest-locked" class="section">
+    <div class="lock-overlay">
+      <div class="lock-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+      </div>
+      <h3 class="lock-title">This page is password protected</h3>
+      <p class="lock-sub">Enter the password to manage quests.</p>
+      <form class="lock-form" id="lock-form" autocomplete="off">
+        <input type="password" id="lock-pw" placeholder="Password" autocomplete="new-password">
+        <button type="submit" class="primary-btn">Unlock</button>
+      </form>
+      <div class="lock-error" id="lock-error"></div>
+    </div>
+  </div>
+
+  <!-- Unlocked view -->
+  <div id="quest-content" class="hidden">
+    <div class="section">
+      <div class="section-header">
+        <h2 id="form-mode-title">Create a new quest</h2>
+        <button class="secondary-btn" id="hide-quests-btn" style="height:32px; font-size:12px; padding:0 12px;">🔒 Lock</button>
+      </div>
+
+      <div class="form-card">
+        <div class="form-grid">
+          <label class="full">
+            <span class="filter-label">Quest name</span>
+            <input type="text" id="q-name" placeholder="e.g. April 5-Star Sprint" maxlength="60">
+          </label>
+          <label class="full">
+            <span class="filter-label">Quest emoji (this is the badge agents earn)</span>
+            <div class="emoji-pick" id="q-emoji-pick"></div>
+          </label>
+          <label class="full">
+            <span class="filter-label">Category</span>
+            <select id="q-category" style="width:100%; margin-top:6px; background:white;">
+              <option value="Quest">Quest</option>
+              <option value="Side Mission">Side Mission</option>
+              <option value="__add__">+ Add new category…</option>
+            </select>
+          </label>
+          <label class="full">
+            <span class="filter-label">Measurement (what counts toward the target)</span>
+            <select id="q-type" style="width:100%; margin-top:6px; background:white;">
+              <option value="5star">5★ ratings (Get N five-star CSATs)</option>
+              <option value="transfers">CSAT transfers made (Transfer N calls to CSAT IVR)</option>
+              <option value="completions">CSATs completed (Get N customers to complete the survey)</option>
+            </select>
+          </label>
+          <label class="full">
+            <span class="filter-label">Team eligibility (who can earn this quest)</span>
+            <select id="q-team" style="width:100%; margin-top:6px; background:white;">
+              <option value="">All teams</option>
+            </select>
+          </label>
+          <label>
+            <span class="filter-label" id="q-target-label">Total required</span>
+            <input type="number" id="q-target" placeholder="10" min="1" max="500">
+          </label>
+          <label>
+            <span class="filter-label">Bonus points awarded</span>
+            <input type="number" id="q-points" placeholder="100" min="1" max="100000">
+          </label>
+          <label>
+            <span class="filter-label">Period from</span>
+            <input type="date" id="q-from" value="2026-04-01">
+          </label>
+          <label>
+            <span class="filter-label">Period to</span>
+            <input type="date" id="q-to" value="2026-04-30">
+          </label>
+        </div>
+        <div class="form-error" id="q-error"></div>
+        <div class="form-actions">
+          <button class="secondary-btn hidden" id="q-cancel">Cancel edit</button>
+          <button class="primary-btn" id="q-create">Create quest</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>All quests</h2>
+        <span class="section-meta" id="quests-count">0 quests</span>
+      </div>
+
+      <div class="quest-filter-tabs">
+        <button class="quest-filter-tab active" data-filter="all">All <span class="count" id="ct-all">0</span></button>
+        <button class="quest-filter-tab" data-filter="active">Active <span class="count" id="ct-active">0</span></button>
+        <button class="quest-filter-tab" data-filter="upcoming">Upcoming <span class="count" id="ct-upcoming">0</span></button>
+        <button class="quest-filter-tab" data-filter="expired">Past <span class="count" id="ct-expired">0</span></button>
+      </div>
+
+      <div id="quests-list"><div class="loading">Loading quests…</div></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+const FALLBACK_DATA = [{"agent":"Abdul Mu'min Larney","score":5,"date":"2026-04-13","team":""},{"agent":"Abdul Mu'min Larney","score":5,"date":"2026-04-13","team":""},{"agent":"Abdul Mu'min Larney","score":1,"date":"2026-04-15","team":""},{"agent":"Abdul Mu'min Larney","score":5,"date":"2026-04-17","team":""},{"agent":"Abdul Mu'min Larney","score":4,"date":"2026-04-20","team":""},{"agent":"Abdul Mu'min Larney","score":5,"date":"2026-04-20","team":""},{"agent":"Abdul Mu'min Larney","score":1,"date":"2026-04-20","team":""},{"agent":"Abdul Mu'min Larney","score":1,"date":"2026-04-20","team":""},{"agent":"Abdul Mu'min Larney","score":1,"date":"2026-04-21","team":""},{"agent":"Abdul Mu'min Larney","score":2,"date":"2026-04-28","team":""},{"agent":"Abdul Mu'min Larney","score":3,"date":"2026-04-30","team":""},{"agent":"Amahle Macotoza","score":3,"date":"2026-04-02","team":"Customer Care"},{"agent":"Amahle Macotoza","score":4,"date":"2026-04-02","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-06","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-06","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-07","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Amahle Macotoza","score":2,"date":"2026-04-07","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-07","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-08","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-08","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-08","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-08","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-09","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-09","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-10","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-11","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-11","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-11","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Amahle Macotoza","score":4,"date":"2026-04-13","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-13","team":"Customer Care"},{"agent":"Amahle Macotoza","score":3,"date":"2026-04-13","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-16","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Amahle Macotoza","score":4,"date":"2026-04-16","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Amahle Macotoza","score":2,"date":"2026-04-17","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Amahle Macotoza","score":2,"date":"2026-04-20","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Amahle Macotoza","score":2,"date":"2026-04-22","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-23","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-23","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-24","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-24","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-27","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-29","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Amahle Macotoza","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Amahle Macotoza","score":1,"date":"2026-04-16","team":"Customer Care"},{"agent":"Arnette Rudolph","score":5,"date":"2026-04-09","team":""},{"agent":"Arnette Rudolph","score":1,"date":"2026-04-09","team":""},{"agent":"Arnette Rudolph","score":5,"date":"2026-04-10","team":""},{"agent":"Arnette Rudolph","score":5,"date":"2026-04-16","team":""},{"agent":"Arnette Rudolph","score":5,"date":"2026-04-17","team":""},{"agent":"Arnette Rudolph","score":5,"date":"2026-04-27","team":""},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-07","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-07","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-08","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-08","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":2,"date":"2026-04-09","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":4,"date":"2026-04-10","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-13","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-14","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-14","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":3,"date":"2026-04-14","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-14","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":4,"date":"2026-04-14","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-15","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-16","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-16","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-16","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-17","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-20","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-20","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":1,"date":"2026-04-20","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":4,"date":"2026-04-21","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":4,"date":"2026-04-21","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":2,"date":"2026-04-22","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":2,"date":"2026-04-27","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-27","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":2,"date":"2026-04-28","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-28","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-28","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":4,"date":"2026-04-29","team":"Technical Support"},{"agent":"Busisiwe Sibisi","score":5,"date":"2026-04-29","team":"Technical Support"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-01","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":4,"date":"2026-04-20","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-23","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":1,"date":"2026-04-07","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":1,"date":"2026-04-10","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":2,"date":"2026-04-23","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Chestlyn Abrahams","score":1,"date":"2026-04-22","team":"Customer Care"},{"agent":"Courteney Worely","score":5,"date":"2026-04-02","team":""},{"agent":"Courteney Worely","score":5,"date":"2026-04-13","team":""},{"agent":"Courteney Worely","score":5,"date":"2026-04-15","team":""},{"agent":"Courteney Worely","score":5,"date":"2026-04-16","team":""},{"agent":"Courteney Worely","score":5,"date":"2026-04-17","team":""},{"agent":"Courteney Worely","score":5,"date":"2026-04-20","team":""},{"agent":"Courteney Worely","score":5,"date":"2026-04-20","team":""},{"agent":"Courteney Worely","score":4,"date":"2026-04-20","team":""},{"agent":"Courteney Worely","score":5,"date":"2026-04-28","team":""},{"agent":"Courteney Worely","score":1,"date":"2026-04-13","team":""},{"agent":"Hampango Moono","score":5,"date":"2026-04-02","team":""},{"agent":"Hampango Moono","score":5,"date":"2026-04-08","team":""},{"agent":"Hampango Moono","score":4,"date":"2026-04-11","team":""},{"agent":"Hampango Moono","score":5,"date":"2026-04-11","team":""},{"agent":"Hampango Moono","score":5,"date":"2026-04-27","team":""},{"agent":"Hampango Moono","score":5,"date":"2026-04-28","team":""},{"agent":"Hampango Moono","score":5,"date":"2026-04-28","team":""},{"agent":"Irfaan Jefferies","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Justin Neethling","score":1,"date":"2026-04-17","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-01","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-06","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-06","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-08","team":""},{"agent":"Lejuan Thomas","score":1,"date":"2026-04-08","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-10","team":""},{"agent":"Lejuan Thomas","score":2,"date":"2026-04-13","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-14","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-15","team":""},{"agent":"Lejuan Thomas","score":4,"date":"2026-04-20","team":""},{"agent":"Lejuan Thomas","score":4,"date":"2026-04-22","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-22","team":""},{"agent":"Lejuan Thomas","score":1,"date":"2026-04-22","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-25","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-29","team":""},{"agent":"Lejuan Thomas","score":3,"date":"2026-04-29","team":""},{"agent":"Lejuan Thomas","score":1,"date":"2026-04-29","team":""},{"agent":"Lejuan Thomas","score":1,"date":"2026-04-01","team":""},{"agent":"Lejuan Thomas","score":1,"date":"2026-04-14","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-15","team":""},{"agent":"Lejuan Thomas","score":4,"date":"2026-04-23","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-20","team":""},{"agent":"Lejuan Thomas","score":5,"date":"2026-04-20","team":""},{"agent":"Lejuan Thomas","score":1,"date":"2026-04-27","team":""},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-01","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-01","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-01","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Liyema Mcedi","score":4,"date":"2026-04-02","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-02","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-07","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Liyema Mcedi","score":3,"date":"2026-04-08","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-08","team":"Customer Care"},{"agent":"Liyema Mcedi","score":4,"date":"2026-04-08","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-08","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Liyema Mcedi","score":2,"date":"2026-04-09","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-09","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-09","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-10","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-14","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-14","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Liyema Mcedi","score":3,"date":"2026-04-14","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-15","team":"Customer Care"},{"agent":"Liyema Mcedi","score":4,"date":"2026-04-15","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-17","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-18","team":"Customer Care"},{"agent":"Liyema Mcedi","score":2,"date":"2026-04-18","team":"Customer Care"},{"agent":"Liyema Mcedi","score":2,"date":"2026-04-18","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-18","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-18","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-20","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-20","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Liyema Mcedi","score":3,"date":"2026-04-20","team":"Customer Care"},{"agent":"Liyema Mcedi","score":3,"date":"2026-04-20","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Liyema Mcedi","score":4,"date":"2026-04-21","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-23","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-24","team":"Customer Care"},{"agent":"Liyema Mcedi","score":4,"date":"2026-04-24","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-27","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-27","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Liyema Mcedi","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Liyema Mcedi","score":1,"date":"2026-04-29","team":"Customer Care"},{"agent":"Luke Gabriel","score":5,"date":"2026-04-15","team":""},{"agent":"Luke Gabriel","score":4,"date":"2026-04-22","team":""},{"agent":"Maimoonah Parker","score":5,"date":"2026-04-13","team":"Customer Recovery"},{"agent":"Maimoonah Parker","score":1,"date":"2026-04-24","team":"Customer Recovery"},{"agent":"Maimoonah Parker","score":1,"date":"2026-04-10","team":"Customer Recovery"},{"agent":"Maimoonah Parker","score":5,"date":"2026-04-24","team":"Customer Recovery"},{"agent":"Maimoonah Parker","score":1,"date":"2026-04-20","team":"Customer Recovery"},{"agent":"Maimoonah Parker","score":1,"date":"2026-04-29","team":"Customer Recovery"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-02","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-03","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-03","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Mihle Vuzane","score":2,"date":"2026-04-07","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-08","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Mihle Vuzane","score":3,"date":"2026-04-08","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-13","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-13","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-13","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-14","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-17","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-17","team":"Customer Care"},{"agent":"Mihle Vuzane","score":2,"date":"2026-04-21","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-23","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-24","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-25","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-25","team":"Customer Care"},{"agent":"Mihle Vuzane","score":4,"date":"2026-04-27","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-27","team":"Customer Care"},{"agent":"Mihle Vuzane","score":4,"date":"2026-04-27","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-29","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-16","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Mihle Vuzane","score":1,"date":"2026-04-29","team":"Customer Care"},{"agent":"Mihle Vuzane","score":5,"date":"2026-04-13","team":"Customer Care"},{"agent":"Moegamad Alee Benjamin","score":1,"date":"2026-04-10","team":"Technical Support"},{"agent":"Moegamad Alee Benjamin","score":5,"date":"2026-04-27","team":"Technical Support"},{"agent":"Moegamad Alee Benjamin","score":5,"date":"2026-04-28","team":"Technical Support"},{"agent":"Musadick Sonday","score":5,"date":"2026-04-27","team":""},{"agent":"Musadick Sonday","score":1,"date":"2026-04-14","team":""},{"agent":"Musadick Sonday","score":5,"date":"2026-04-20","team":""},{"agent":"Mushfiqah Hermans","score":4,"date":"2026-04-14","team":""},{"agent":"Nicole Morgan","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Nicole Morgan","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Nicole Morgan","score":1,"date":"2026-04-01","team":"Customer Care"},{"agent":"Nicole Morgan","score":1,"date":"2026-04-09","team":"Customer Care"},{"agent":"Nicole Morgan","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Nicole Morgan","score":4,"date":"2026-04-24","team":"Customer Care"},{"agent":"Nicole Morgan","score":4,"date":"2026-04-24","team":"Customer Care"},{"agent":"Nicole Morgan","score":4,"date":"2026-04-08","team":"Customer Care"},{"agent":"Nicole Morgan","score":3,"date":"2026-04-04","team":"Customer Care"},{"agent":"Nicole Morgan","score":3,"date":"2026-04-27","team":"Customer Care"},{"agent":"Nicole Morgan","score":2,"date":"2026-04-23","team":"Customer Care"},{"agent":"Nicole Morgan","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Nicole Morgan","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Nicole Morgan","score":1,"date":"2026-04-27","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-18","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":1,"date":"2026-04-08","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-06","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-07","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":4,"date":"2026-04-18","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":4,"date":"2026-04-08","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":4,"date":"2026-04-14","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":3,"date":"2026-04-10","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Nolukhanyo Kokela","score":1,"date":"2026-04-28","team":"Customer Care"},{"agent":"Octavia Noleen Hill","score":1,"date":"2026-04-27","team":""},{"agent":"Octavia Noleen Hill","score":1,"date":"2026-04-28","team":""},{"agent":"Octavia Noleen Hill","score":1,"date":"2026-04-29","team":""},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-01","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-02","team":"Customer Care"},{"agent":"Odwa Mayosi","score":4,"date":"2026-04-13","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-14","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-14","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-15","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Odwa Mayosi","score":4,"date":"2026-04-16","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-17","team":"Customer Care"},{"agent":"Odwa Mayosi","score":3,"date":"2026-04-17","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-17","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-17","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":4,"date":"2026-04-20","team":"Customer Care"},{"agent":"Odwa Mayosi","score":2,"date":"2026-04-21","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-21","team":"Customer Care"},{"agent":"Odwa Mayosi","score":2,"date":"2026-04-22","team":"Customer Care"},{"agent":"Odwa Mayosi","score":2,"date":"2026-04-22","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-24","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-27","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-27","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-27","team":"Customer Care"},{"agent":"Odwa Mayosi","score":1,"date":"2026-04-29","team":"Customer Care"},{"agent":"Odwa Mayosi","score":5,"date":"2026-04-29","team":"Customer Care"},{"agent":"Ruqayyah Simons","score":3,"date":"2026-04-03","team":"Customer Care"},{"agent":"Ruqayyah Simons","score":1,"date":"2026-04-06","team":"Customer Care"},{"agent":"Ruqayyah Simons","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Ruqayyah Simons","score":1,"date":"2026-04-16","team":"Customer Care"},{"agent":"Ruqayyah Simons","score":5,"date":"2026-04-01","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":1,"date":"2026-04-14","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":5,"date":"2026-04-13","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":5,"date":"2026-04-13","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":4,"date":"2026-04-20","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":4,"date":"2026-04-22","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":3,"date":"2026-04-24","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":5,"date":"2026-04-17","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":5,"date":"2026-04-24","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":1,"date":"2026-04-27","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":1,"date":"2026-04-28","team":"Customer Care"},{"agent":"Sakhanya Daluka","score":1,"date":"2026-04-29","team":"Customer Care"},{"agent":"Sakiena Stringer","score":5,"date":"2026-04-23","team":""},{"agent":"Sameera Van der Berg","score":5,"date":"2026-04-15","team":""},{"agent":"Sameera Van der Berg","score":5,"date":"2026-04-20","team":""},{"agent":"Sameera Van der Berg","score":1,"date":"2026-04-09","team":""},{"agent":"Sameera Van der Berg","score":5,"date":"2026-04-08","team":""},{"agent":"Sameera Van der Berg","score":5,"date":"2026-04-15","team":""},{"agent":"Shameez Williams","score":2,"date":"2026-04-01","team":""},{"agent":"Shameez Williams","score":3,"date":"2026-04-01","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-01","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-08","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-09","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-09","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-10","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-13","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-14","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-14","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-16","team":""},{"agent":"Shameez Williams","score":1,"date":"2026-04-14","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-08","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-10","team":""},{"agent":"Shameez Williams","score":5,"date":"2026-04-16","team":""},{"agent":"Shaun Sampson","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-07","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-13","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-13","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-13","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-14","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-14","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-14","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-14","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-15","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-15","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-16","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-16","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-17","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-20","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-20","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-20","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-21","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-22","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-23","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-24","team":"Technical Support"},{"agent":"Shaun Sampson","score":5,"date":"2026-04-29","team":"Technical Support"},{"agent":"Shaun Sampson","score":1,"date":"2026-04-29","team":"Technical Support"},{"agent":"Sinovuyo Mnisi","score":5,"date":"2026-04-22","team":""},{"agent":"Sinovuyo Mnisi","score":5,"date":"2026-04-23","team":""},{"agent":"Sinovuyo Mnisi","score":5,"date":"2026-04-27","team":""},{"agent":"Siphelo Vena","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-02","team":"Technical Support"},{"agent":"Siphelo Vena","score":1,"date":"2026-04-02","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-02","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-07","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-07","team":"Technical Support"},{"agent":"Siphelo Vena","score":1,"date":"2026-04-08","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-08","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Siphelo Vena","score":1,"date":"2026-04-14","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-14","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-14","team":"Technical Support"},{"agent":"Siphelo Vena","score":4,"date":"2026-04-15","team":"Technical Support"},{"agent":"Siphelo Vena","score":1,"date":"2026-04-15","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-15","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-15","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-16","team":"Technical Support"},{"agent":"Siphelo Vena","score":4,"date":"2026-04-16","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-20","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-20","team":"Technical Support"},{"agent":"Siphelo Vena","score":1,"date":"2026-04-20","team":"Technical Support"},{"agent":"Siphelo Vena","score":4,"date":"2026-04-22","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Siphelo Vena","score":2,"date":"2026-04-23","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-24","team":"Technical Support"},{"agent":"Siphelo Vena","score":5,"date":"2026-04-27","team":"Technical Support"},{"agent":"Siphelo Vena","score":2,"date":"2026-04-27","team":"Technical Support"},{"agent":"Siphelo Vena","score":1,"date":"2026-04-28","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Tasneem Davids","score":3,"date":"2026-04-01","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-02","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-07","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-08","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Tasneem Davids","score":3,"date":"2026-04-10","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-11","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-13","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-15","team":"Technical Support"},{"agent":"Tasneem Davids","score":4,"date":"2026-04-16","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-21","team":"Technical Support"},{"agent":"Tasneem Davids","score":4,"date":"2026-04-22","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Tasneem Davids","score":3,"date":"2026-04-25","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-25","team":"Technical Support"},{"agent":"Tasneem Davids","score":5,"date":"2026-04-27","team":"Technical Support"},{"agent":"Tasneem Davids","score":2,"date":"2026-04-28","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-06","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-06","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-06","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-07","team":"Technical Support"},{"agent":"Thaakirah Charles","score":4,"date":"2026-04-07","team":"Technical Support"},{"agent":"Thaakirah Charles","score":1,"date":"2026-04-13","team":"Technical Support"},{"agent":"Thaakirah Charles","score":4,"date":"2026-04-14","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-14","team":"Technical Support"},{"agent":"Thaakirah Charles","score":4,"date":"2026-04-14","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-17","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-18","team":"Technical Support"},{"agent":"Thaakirah Charles","score":1,"date":"2026-04-20","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-21","team":"Technical Support"},{"agent":"Thaakirah Charles","score":3,"date":"2026-04-21","team":"Technical Support"},{"agent":"Thaakirah Charles","score":4,"date":"2026-04-22","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Thaakirah Charles","score":1,"date":"2026-04-24","team":"Technical Support"},{"agent":"Thaakirah Charles","score":5,"date":"2026-04-24","team":"Technical Support"},{"agent":"Wanay Matthews","score":5,"date":"2026-04-08","team":"Technical Support"},{"agent":"Wanay Matthews","score":4,"date":"2026-04-20","team":"Technical Support"},{"agent":"Wanay Matthews","score":4,"date":"2026-04-27","team":"Technical Support"},{"agent":"Wanay Matthews","score":4,"date":"2026-04-29","team":"Technical Support"},{"agent":"Wanay Matthews","score":2,"date":"2026-04-14","team":"Technical Support"},{"agent":"Wanay Matthews","score":4,"date":"2026-04-07","team":"Technical Support"},{"agent":"Wanay Matthews","score":4,"date":"2026-04-16","team":"Technical Support"},{"agent":"Wanay Matthews","score":5,"date":"2026-04-20","team":"Technical Support"},{"agent":"Wanay Matthews","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Waseem Noordien","score":5,"date":"2026-04-08","team":""},{"agent":"Waseem Noordien","score":2,"date":"2026-04-15","team":""},{"agent":"Waseem Noordien","score":5,"date":"2026-04-17","team":""},{"agent":"Waseem Noordien","score":1,"date":"2026-04-18","team":""},{"agent":"Waseem Noordien","score":4,"date":"2026-04-21","team":""},{"agent":"Waseem Noordien","score":4,"date":"2026-04-28","team":""},{"agent":"Waseem Noordien","score":5,"date":"2026-04-27","team":""},{"agent":"Zaakierah Lottering","score":5,"date":"2026-04-09","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":4,"date":"2026-04-23","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":4,"date":"2026-04-20","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-20","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":5,"date":"2026-04-22","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-07","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-09","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-13","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-15","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":5,"date":"2026-04-16","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":4,"date":"2026-04-22","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":5,"date":"2026-04-17","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":5,"date":"2026-04-25","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":5,"date":"2026-04-27","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":5,"date":"2026-04-28","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-20","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-21","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Zaakierah Lottering","score":1,"date":"2026-04-27","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-06","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-09","team":"Customer Care"},{"agent":"Zeenith Vardien","score":4,"date":"2026-04-09","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-09","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Zeenith Vardien","score":4,"date":"2026-04-10","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-10","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-15","team":"Customer Care"},{"agent":"Zeenith Vardien","score":2,"date":"2026-04-07","team":"Customer Care"},{"agent":"Zeenith Vardien","score":2,"date":"2026-04-08","team":"Customer Care"},{"agent":"Zeenith Vardien","score":4,"date":"2026-04-08","team":"Customer Care"},{"agent":"Zeenith Vardien","score":3,"date":"2026-04-21","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-23","team":"Customer Care"},{"agent":"Zeenith Vardien","score":5,"date":"2026-04-24","team":"Customer Care"},{"agent":"Zeenith Vardien","score":1,"date":"2026-04-22","team":"Customer Care"},{"agent":"Zeenith Vardien","score":1,"date":"2026-04-23","team":"Customer Care"},{"agent":"Zeenith Vardien","score":1,"date":"2026-04-29","team":"Customer Care"},{"agent":"Aaliyah Pavitt","score":1,"date":"2026-04-01","team":"Customer Recovery"},{"agent":"Aaliyah Pavitt","score":1,"date":"2026-04-09","team":"Customer Recovery"},{"agent":"Aaliyah Pavitt","score":5,"date":"2026-04-09","team":"Customer Recovery"},{"agent":"Aaliyah Pavitt","score":4,"date":"2026-04-22","team":"Customer Recovery"},{"agent":"Aaliyah Pavitt","score":4,"date":"2026-04-02","team":"Customer Recovery"},{"agent":"Aaliyah Pavitt","score":5,"date":"2026-04-28","team":"Customer Recovery"},{"agent":"Akiefah Maged","score":2,"date":"2026-04-06","team":""},{"agent":"Avuyile Mcinga","score":1,"date":"2026-04-09","team":"Credit Control"},{"agent":"Ayanda Mdidimba","score":4,"date":"2026-04-22","team":"Technical Support"},{"agent":"Ayanda Mdidimba","score":5,"date":"2026-04-17","team":"Technical Support"},{"agent":"Ayanda Mdidimba","score":5,"date":"2026-04-17","team":"Technical Support"},{"agent":"Bianca Van Aardt","score":5,"date":"2026-04-21","team":"Technical Support"},{"agent":"Bianca Van Aardt","score":1,"date":"2026-04-24","team":"Technical Support"},{"agent":"Byron Benjamin","score":1,"date":"2026-04-01","team":"Technical Support"},{"agent":"Byron Benjamin","score":1,"date":"2026-04-14","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-09","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-13","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-13","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-16","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-16","team":"Technical Support"},{"agent":"Byron Benjamin","score":2,"date":"2026-04-07","team":"Technical Support"},{"agent":"Byron Benjamin","score":2,"date":"2026-04-07","team":"Technical Support"},{"agent":"Byron Benjamin","score":4,"date":"2026-04-08","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-17","team":"Technical Support"},{"agent":"Byron Benjamin","score":5,"date":"2026-04-28","team":"Technical Support"},{"agent":"Byron Benjamin","score":1,"date":"2026-04-28","team":"Technical Support"},{"agent":"Charne Bailey","score":5,"date":"2026-04-08","team":""},{"agent":"Colrick Weaver","score":1,"date":"2026-04-07","team":"Technical Support"},{"agent":"Colrick Weaver","score":1,"date":"2026-04-15","team":"Technical Support"},{"agent":"Colrick Weaver","score":5,"date":"2026-04-01","team":"Technical Support"},{"agent":"Colrick Weaver","score":5,"date":"2026-04-17","team":"Technical Support"},{"agent":"Colrick Weaver","score":5,"date":"2026-04-29","team":"Technical Support"},{"agent":"Colrick Weaver","score":1,"date":"2026-04-20","team":"Technical Support"},{"agent":"Colrick Weaver","score":1,"date":"2026-04-27","team":"Technical Support"},{"agent":"Faariegh Gamieldien","score":5,"date":"2026-04-15","team":"Technical Support"},{"agent":"Faariegh Gamieldien","score":4,"date":"2026-04-15","team":"Technical Support"},{"agent":"Hluma Sani","score":5,"date":"2026-04-15","team":""},{"agent":"Hluma Sani","score":3,"date":"2026-04-28","team":""},{"agent":"Hluma Sani","score":2,"date":"2026-04-28","team":""},{"agent":"Hluma Sani","score":1,"date":"2026-04-17","team":""},{"agent":"Hluma Sani","score":1,"date":"2026-04-17","team":""},{"agent":"Hluma Sani","score":1,"date":"2026-04-20","team":""},{"agent":"Huzaifah Mohamed","score":1,"date":"2026-04-06","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":5,"date":"2026-04-08","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":5,"date":"2026-04-10","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":2,"date":"2026-04-03","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":2,"date":"2026-04-04","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":2,"date":"2026-04-08","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":2,"date":"2026-04-14","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":4,"date":"2026-04-08","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":3,"date":"2026-04-03","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":2,"date":"2026-04-22","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":5,"date":"2026-04-21","team":"Technical Support"},{"agent":"Huzaifah Mohamed","score":1,"date":"2026-04-27","team":"Technical Support"},{"agent":"Jade Hendricks","score":1,"date":"2026-04-03","team":"Technical Support"},{"agent":"Jade Hendricks","score":1,"date":"2026-04-07","team":"Technical Support"},{"agent":"Jade Hendricks","score":1,"date":"2026-04-09","team":"Technical Support"},{"agent":"Jade Hendricks","score":5,"date":"2026-04-02","team":"Technical Support"},{"agent":"Jade Hendricks","score":5,"date":"2026-04-04","team":"Technical Support"},{"agent":"Jade Hendricks","score":2,"date":"2026-04-04","team":"Technical Support"},{"agent":"Jade Hendricks","score":2,"date":"2026-04-08","team":"Technical Support"},{"agent":"Jade Hendricks","score":4,"date":"2026-04-08","team":"Technical Support"},{"agent":"Jade Hendricks","score":4,"date":"2026-04-09","team":"Technical Support"},{"agent":"Judy Whiteboy","score":1,"date":"2026-04-16","team":"Customer Recovery"},{"agent":"Judy Whiteboy","score":5,"date":"2026-04-07","team":"Customer Recovery"},{"agent":"Judy Whiteboy","score":4,"date":"2026-04-25","team":"Customer Recovery"},{"agent":"Judy Whiteboy","score":3,"date":"2026-04-02","team":"Customer Recovery"},{"agent":"Judy Whiteboy","score":5,"date":"2026-04-22","team":"Customer Recovery"},{"agent":"Judy Whiteboy","score":1,"date":"2026-04-27","team":"Customer Recovery"},{"agent":"Kamvelihle Masiza","score":1,"date":"2026-04-01","team":""},{"agent":"Kamvelihle Masiza","score":4,"date":"2026-04-28","team":""},{"agent":"Kamvelihle Masiza","score":5,"date":"2026-04-20","team":""},{"agent":"Kamvelihle Masiza","score":5,"date":"2026-04-24","team":""},{"agent":"Kamvelihle Masiza","score":1,"date":"2026-04-21","team":""},{"agent":"Kamvelihle Masiza","score":1,"date":"2026-04-22","team":""},{"agent":"Kamvelihle Masiza","score":1,"date":"2026-04-23","team":""},{"agent":"Lindokuhle Gade","score":1,"date":"2026-04-16","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":5,"date":"2026-04-08","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":5,"date":"2026-04-08","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":4,"date":"2026-04-28","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":2,"date":"2026-04-14","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":2,"date":"2026-04-14","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":3,"date":"2026-04-17","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":3,"date":"2026-04-28","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":2,"date":"2026-04-24","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":5,"date":"2026-04-21","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":5,"date":"2026-04-22","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":5,"date":"2026-04-23","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":1,"date":"2026-04-17","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":1,"date":"2026-04-18","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":1,"date":"2026-04-21","team":"Technical Support"},{"agent":"Lindokuhle Gade","score":1,"date":"2026-04-29","team":"Technical Support"},{"agent":"Nabiela Phillips","score":1,"date":"2026-04-10","team":""},{"agent":"Nabiela Phillips","score":1,"date":"2026-04-13","team":""},{"agent":"Nabiela Phillips","score":1,"date":"2026-04-13","team":""},{"agent":"Nabiela Phillips","score":5,"date":"2026-04-08","team":""},{"agent":"Nabiela Phillips","score":5,"date":"2026-04-16","team":""},{"agent":"Nabiela Phillips","score":5,"date":"2026-04-20","team":""},{"agent":"Nabiela Phillips","score":5,"date":"2026-04-21","team":""},{"agent":"Nabiela Phillips","score":5,"date":"2026-04-27","team":""},{"agent":"Nabiela Phillips","score":5,"date":"2026-04-27","team":""},{"agent":"Nabiela Phillips","score":1,"date":"2026-04-20","team":""},{"agent":"Nabiela Phillips","score":1,"date":"2026-04-22","team":""},{"agent":"Nabiela Phillips","score":1,"date":"2026-04-23","team":""},{"agent":"Nasar Kahaar","score":5,"date":"2026-04-21","team":""},{"agent":"Nasar Kahaar","score":1,"date":"2026-04-22","team":""},{"agent":"Nolufefe Dlali","score":1,"date":"2026-04-02","team":"Customer Recovery"},{"agent":"Nolufefe Dlali","score":1,"date":"2026-04-13","team":"Customer Recovery"},{"agent":"Nolufefe Dlali","score":5,"date":"2026-04-08","team":"Customer Recovery"},{"agent":"Nolufefe Dlali","score":5,"date":"2026-04-14","team":"Customer Recovery"},{"agent":"Nolufefe Dlali","score":5,"date":"2026-04-16","team":"Customer Recovery"},{"agent":"Nolufefe Dlali","score":4,"date":"2026-04-29","team":"Customer Recovery"},{"agent":"Nolufefe Dlali","score":4,"date":"2026-04-14","team":"Customer Recovery"},{"agent":"Nozibele Phikiso","score":1,"date":"2026-04-02","team":""},{"agent":"Nozibele Phikiso","score":5,"date":"2026-04-10","team":""},{"agent":"Nozibele Phikiso","score":5,"date":"2026-04-14","team":""},{"agent":"Nozibele Phikiso","score":4,"date":"2026-04-20","team":""},{"agent":"Nozibele Phikiso","score":1,"date":"2026-04-23","team":""},{"agent":"Nozibele Phikiso","score":1,"date":"2026-04-27","team":""},{"agent":"Ra-ees Karlie","score":1,"date":"2026-04-10","team":""},{"agent":"Ra-ees Karlie","score":5,"date":"2026-04-07","team":""},{"agent":"Ra-ees Karlie","score":5,"date":"2026-04-07","team":""},{"agent":"Ra-ees Karlie","score":4,"date":"2026-04-29","team":""},{"agent":"Ra-ees Karlie","score":5,"date":"2026-04-24","team":""},{"agent":"Ra-ees Karlie","score":1,"date":"2026-04-17","team":""},{"agent":"Ra-ees Karlie","score":1,"date":"2026-04-17","team":""},{"agent":"Ra-ees Karlie","score":1,"date":"2026-04-21","team":""},{"agent":"Ra-ees Karlie","score":1,"date":"2026-04-27","team":""},{"agent":"Saadiqah Kada","score":5,"date":"2026-04-09","team":"Customer Recovery"},{"agent":"Saadiqah Kada","score":5,"date":"2026-04-18","team":"Customer Recovery"},{"agent":"Shihaam Salie","score":5,"date":"2026-04-16","team":""},{"agent":"Shihaam Salie","score":5,"date":"2026-04-20","team":""},{"agent":"Shihaam Salie","score":5,"date":"2026-04-20","team":""},{"agent":"Shihaam Salie","score":1,"date":"2026-04-20","team":""},{"agent":"Thabiso Noholoza","score":1,"date":"2026-04-16","team":"Technical Support"},{"agent":"Thabiso Noholoza","score":1,"date":"2026-04-28","team":"Technical Support"},{"agent":"Unathi Dwangu","score":5,"date":"2026-04-24","team":""}];
+
+// Live data starts as fallback, gets replaced when sheet fetch completes
+let DATA = FALLBACK_DATA;
+
+// Google Sheet via gviz JSONP — works even from file:// URLs (no fetch/CORS needed).
+// Sheet must be shared as "Anyone with the link" (Viewer).
+const SHEET_ID = '181ulkFTN8AdV8qUrmZiIbHDuq9ci9CUu_SJqD3CjM_Q';
+const SHEET_GID = '1158291162';
+
+/* Convert various date inputs -> "YYYY-MM-DD" */
+function normalizeDate(raw) {
+  if (raw == null) return null;
+  if (raw instanceof Date) {
+    const y = raw.getFullYear(), m = String(raw.getMonth()+1).padStart(2,'0'), d = String(raw.getDate()).padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(raw).trim();
+  if (!s) return null;
+  // gviz returns dates as "Date(YYYY,M,D,...)" — month is 0-indexed
+  const gm = s.match(/^Date\((\d+),(\d+),(\d+)/);
+  if (gm) {
+    const y = gm[1], m = String(parseInt(gm[2],10)+1).padStart(2,'0'), d = gm[3].padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // DD/MM/YYYY
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) {
+    const d = m[1].padStart(2, '0'), mo = m[2].padStart(2, '0'), y = m[3];
+    return `${y}-${mo}-${d}`;
+  }
+  const tried = new Date(s);
+  if (!isNaN(tried.getTime())) return tried.toISOString().slice(0, 10);
+  return null;
+}
+
+/* Normalize whitespace in agent names ("Michelle  West" -> "Michelle West") */
+function normalizeName(raw) {
+  return (raw || '').replace(/\s+/g, ' ').trim();
+}
+
+/* Convert gviz table response -> our internal record format.
+   Each record: { agent, score, date, team, transfer }
+   - score: 1-5 if customer rated, null if no rating (or not even transferred)
+   - transfer: true if the agent transferred the call to the CSAT IVR
+   Non-agent rows (queues, IVRs, voice routes, raw phone numbers) are dropped. */
+function gvizTableToRecords(table) {
+  if (!table || !table.cols || !table.rows) return [];
+  let headers = table.cols.map(c => (c.label || c.id || '').trim());
+  let dataRows = table.rows;
+  if (headers.every(h => !h) && dataRows.length > 0) {
+    headers = dataRows[0].c.map(c => c && c.v != null ? String(c.v).trim() : '');
+    dataRows = dataRows.slice(1);
+  }
+  const lower = headers.map(h => h.toLowerCase());
+  const findIdx = target => lower.findIndex(h => h === target);
+
+  const iAgent = findIdx('assigned agent name');
+  const iScore = findIdx('csat score new');
+  const iScoreFallback = findIdx('csat score');
+  const iDate = findIdx('date');
+  const iUpdatedAt = findIdx('updated at');
+  const iTeam = findIdx('team');
+  const iTransfer = findIdx('csat transfer made');
+
+  if (iAgent < 0) {
+    console.warn('Could not find "Assigned Agent name" column. Headers were:', headers);
+    return [];
+  }
+
+  // Patterns that match queue/IVR/route entries (NOT real agents)
+  const NON_AGENT_PATTERNS = [
+    /^bonline\b/i,            // "bOnline Ltd.", "bOnline IVR ..."
+    /^voice\s*-/i,            // "Voice - Customer Care", "Voice - Sales inbound..."
+    /^customer activations/i, // "Customer Activations 21/01/2026"
+    /^cc service/i,           // "CC Service Smart routing"
+    /^service sales/i,        // "Service Sales Smart routing"
+    /^sales inbound/i,
+    /^complaints and retentions/i,
+    /^loyality$/i, /^loyalty$/i,
+    /^\d{6,}$/,               // pure digit sequences like "442036682250"
+  ];
+  function isAgent(name) {
+    if (!name) return false;
+    for (const p of NON_AGENT_PATTERNS) if (p.test(name)) return false;
+    return true;
+  }
+
+  const records = [];
+  for (const row of dataRows) {
+    if (!row || !row.c) continue;
+    const cells = row.c;
+    const cellVal = (i) => {
+      if (i < 0 || !cells[i]) return '';
+      const c = cells[i];
+      return c.v != null ? c.v : (c.f || '');
+    };
+
+    const agent = normalizeName(cellVal(iAgent));
+    if (!agent) continue;
+    if (!isAgent(agent)) continue;
+
+    // Score: optional now (null = no rating)
+    let scoreRaw = cellVal(iScore);
+    if (scoreRaw === '' || scoreRaw == null) scoreRaw = cellVal(iScoreFallback);
+    scoreRaw = String(scoreRaw == null ? '' : scoreRaw).trim();
+    let score = null;
+    if (/^[1-5](\.0+)?$/.test(scoreRaw)) score = parseInt(scoreRaw, 10);
+    else if (scoreRaw) {
+      const t = scoreRaw.toLowerCase();
+      if (t.includes('extremely satisfied')) score = 5;
+      else if (t.includes('satisfied') && !t.includes('dissatisfied')) score = 4;
+      else if (t.includes('neutral')) score = 3;
+      else if (t.includes('extremely dissatisfied')) score = 1;
+      else if (t.includes('dissatisfied')) score = 2;
+      // "No Response", "-", etc. -> stays null
+    }
+    if (score !== null && (!Number.isFinite(score) || score < 1 || score > 5)) score = null;
+
+    // Transfer column
+    let transfer = false;
+    if (iTransfer >= 0) {
+      const tv = String(cellVal(iTransfer) || '').trim().toLowerCase();
+      transfer = (tv === 'yes' || tv === 'true' || tv === '1');
+    }
+
+    let date = null;
+    if (iDate >= 0) date = normalizeDate(cellVal(iDate));
+    if (!date && iUpdatedAt >= 0) date = normalizeDate(cellVal(iUpdatedAt));
+    if (!date) continue;
+
+    // Note: we keep ALL rows belonging to a real agent (including calls that
+    // weren't transferred and didn't get a rating). This is required so we
+    // can compute total handled calls per agent — used as the denominator for
+    // transfer-rate quests.
+
+    const team = iTeam >= 0 ? String(cellVal(iTeam) || '').trim() : '';
+    records.push({ agent, score, date, team, transfer });
+  }
+  return records;
+}
+
+/* JSONP fetch via injected <script> tag — works from file:// URLs (no CORS) */
+function fetchSheetData() {
+  return new Promise((resolve, reject) => {
+    const cbName = 'gvizCb_' + Date.now() + '_' + Math.floor(Math.random()*1e6);
+    const tqx = encodeURIComponent('responseHandler:' + cbName);
+    const url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq' +
+                '?tqx=' + tqx + '&gid=' + SHEET_GID + '&headers=1&cb=' + Date.now();
+
+    let script = null, done = false, timer = null;
+
+    function cleanup() {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      try { delete window[cbName]; } catch(e) { window[cbName] = undefined; }
+      if (script && script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = function(response) {
+      try {
+        if (!response || !response.table) {
+          cleanup();
+          reject(new Error('gviz returned no table — sheet may not be shared publicly'));
+          return;
+        }
+        const records = gvizTableToRecords(response.table);
+        cleanup();
+        if (records.length === 0) {
+          reject(new Error('Parsed 0 records — check column headers'));
+        } else {
+          resolve(records);
+        }
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    };
+
+    script = document.createElement('script');
+    script.src = url;
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('Failed to load sheet — check that it is shared "Anyone with the link"'));
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timed out fetching sheet'));
+    }, 20000);
+    document.head.appendChild(script);
+  });
+}
+
+const QUEST_PASSWORD = '@Snow85201';
+const EMOJI_OPTIONS = ['⭐','🏆','🔥','💎','🚀','⚡','🎯','💪','🌟','👑','🏅','🎖️','✨','💫','🥇','🎉'];
+
+const TEAMS = [...new Set(DATA.map(r => r.team).filter(t => t))].sort();
+TEAMS.unshift('(no team)');
+const teamSelect = document.getElementById('team-select');
+TEAMS.forEach(t => {
+  const opt = document.createElement('option');
+  opt.value = t === '(no team)' ? '__NONE__' : t;
+  opt.textContent = t;
+  teamSelect.appendChild(opt);
+});
+
+let currentView = 'top';
+let currentQuestFilter = 'all';
+let questsCache = [];
+let editingQuestId = null;
+let selectedEmoji = '⭐';
+// Data date range — always derived from the actual loaded records
+let dataMinDate = null;
+let dataMaxDate = null;
+// Flips true after the first successful sheet load so subsequent refreshes
+// don't reset the user's date filter selection.
+let firstLoadDone = false;
+
+function getInitials(name) {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+function fmt(n, d) { return Number(n).toFixed(d); }
+function fmtDate(s) {
+  if (!s) return '';
+  return new Date(s + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' });
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+/* ===== PAGE NAV ===== */
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.nav-btn').forEach(b => {
+  b.addEventListener('click', () => showPage(b.dataset.page));
+});
+
+/* ===== POINTS + BADGES ===== */
+function computeAgentQuestData(agentName, fromFilter, toFilter, teamFilter) {
+  let bonus = 0;
+  const earnedEmojis = []; // each entry: { emoji, name }
+  const completedQuests = [];
+
+  // Figure out this agent's team (the most common non-empty team across their rows).
+  // If the agent has no team data, they're treated as "unassigned" and won't qualify
+  // for team-specific quests.
+  let agentTeam = '';
+  const teamCounts = {};
+  for (const r of DATA) {
+    if (r.agent !== agentName) continue;
+    if (!r.team) continue;
+    teamCounts[r.team] = (teamCounts[r.team] || 0) + 1;
+  }
+  let max = 0;
+  for (const [t, n] of Object.entries(teamCounts)) {
+    if (n > max) { max = n; agentTeam = t; }
+  }
+
+  questsCache.forEach(q => {
+    // Team scope: if the quest specifies a team, the agent must be on that team.
+    // An empty team string means "All teams" — applies to everyone.
+    if (q.team && q.team !== agentTeam) return;
+
+    // Determine the effective window: intersection of quest period and filter range.
+    const effFrom = (fromFilter && fromFilter > q.from) ? fromFilter : q.from;
+    const effTo = (toFilter && toFilter < q.to) ? toFilter : q.to;
+    if (effFrom > effTo) return; // no overlap
+
+    const type = q.type || '5star';
+
+    // Walk this agent's rows once and tally everything we might need.
+    let fives = 0, transfers = 0, completions = 0, handled = 0;
+    for (const r of DATA) {
+      if (r.agent !== agentName) continue;
+      if (r.date < effFrom || r.date > effTo) continue;
+      if (teamFilter === '__NONE__' && r.team !== '') continue;
+      if (teamFilter && teamFilter !== '__NONE__' && r.team !== teamFilter) continue;
+
+      handled++;
+      if (r.transfer) transfers++;
+      if (r.score === 5) fives++;
+      if (r.transfer && r.score !== null && r.score !== undefined) completions++;
+    }
+
+    // Determine if the quest is met. 5★ stays a count; transfers/completions
+    // are now percentages (target stored as 0-100).
+    let met = false;
+    if (type === '5star') {
+      met = fives >= q.target;
+    } else if (type === 'transfers') {
+      const rate = handled > 0 ? (transfers / handled) * 100 : 0;
+      met = rate >= q.target;
+    } else if (type === 'completions') {
+      const rate = transfers > 0 ? (completions / transfers) * 100 : 0;
+      met = rate >= q.target;
+    }
+
+    if (met) {
+      bonus += q.points;
+      earnedEmojis.push({ emoji: q.emoji, name: q.name });
+      completedQuests.push(q.name);
+    }
+  });
+  return { bonus, earnedEmojis, completedQuests };
+}
+
+function applyFilters() {
+  const team = teamSelect.value;
+  const from = document.getElementById('from-date').value;
+  const to = document.getElementById('to-date').value;
+  let rows = DATA.slice();
+  if (team === '__NONE__') rows = rows.filter(r => r.team === '');
+  else if (team) rows = rows.filter(r => r.team === team);
+  if (from) rows = rows.filter(r => r.date >= from);
+  if (to) rows = rows.filter(r => r.date <= to);
+  render(rows, team, from, to);
+}
+
+function render(rows, team, from, to) {
+  // Distinguish completed CSAT rows (have a numeric score) from transfer-only rows
+  const completedRows = rows.filter(r => r.score !== null && r.score !== undefined);
+  const transferRows = rows.filter(r => r.transfer);
+  const total = completedRows.length;
+  const totalTransfers = transferRows.length;
+  const sum = completedRows.reduce((a, r) => a + r.score, 0);
+  const avg = total ? sum / total : 0;
+  const responseRate = totalTransfers ? (total / totalTransfers) * 100 : 0;
+
+  const teamLabel = !team ? 'All teams · all representatives' : (team === '__NONE__' ? 'Unassigned team' : team);
+  document.getElementById('subtitle').textContent = teamLabel;
+
+  const fromLabel = fmtDate(from);
+  const toLabel = fmtDate(to);
+  document.getElementById('period-label').textContent =
+    (fromLabel && toLabel) ? `${fromLabel} – ${toLabel} 2026` : 'April 2026';
+
+  document.getElementById('m-total').textContent = total.toLocaleString();
+  const agentSet = new Set(completedRows.map(r => r.agent));
+  document.getElementById('m-total-sub').textContent = `${agentSet.size} agent${agentSet.size === 1 ? '' : 's'}`;
+  document.getElementById('m-avg').textContent = fmt(avg, 2);
+
+  // New transfer metrics
+  const mTransferEl = document.getElementById('m-transfers');
+  if (mTransferEl) mTransferEl.textContent = totalTransfers.toLocaleString();
+  const mTransferSubEl = document.getElementById('m-transfers-sub');
+  if (mTransferSubEl) mTransferSubEl.textContent = totalTransfers > 0
+    ? `${fmt(responseRate, 1)}% response rate`
+    : 'no transfers in selection';
+
+  const dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
+  completedRows.forEach(r => { dist[r.score]++; });
+  const colors = {5: '#4DBD8B', 4: '#A5DAB8', 3: '#D8D5E8', 2: '#F4B86E', 1: '#E55A5A'};
+  const labelColors = {5: '#1F6E48', 4: '#2D7E5C', 3: '#5F5C7A', 2: '#A35E1A', 1: '#A52929'};
+  const distBar = document.getElementById('dist-bar');
+  const distLegend = document.getElementById('dist-legend');
+  distBar.innerHTML = '';
+  distLegend.innerHTML = '';
+  [5, 4, 3, 2, 1].forEach(s => {
+    const w = total ? (dist[s] / total) * 100 : 0;
+    if (w > 0) {
+      const div = document.createElement('div');
+      div.style.width = w + '%';
+      div.style.background = colors[s];
+      div.title = `${s}★: ${dist[s]}`;
+      distBar.appendChild(div);
+    }
+    const li = document.createElement('span');
+    li.innerHTML = `<span style="color: ${labelColors[s]}">${s}★</span>${total ? Math.round(w) : 0}%`;
+    distLegend.appendChild(li);
+  });
+  document.getElementById('dist-meta').textContent = `${total.toLocaleString()} response${total === 1 ? '' : 's'}`;
+
+  // Per-agent aggregates:
+  //   handled  = total rows for this agent (any call they took)
+  //   transfers = rows where transfer=true
+  //   count    = rows with a numeric score (completed CSATs)
+  //   fives    = rows with score === 5
+  const byAgent = {};
+  rows.forEach(r => {
+    if (!byAgent[r.agent]) byAgent[r.agent] = { name: r.agent, handled: 0, count: 0, sum: 0, fives: 0, transfers: 0 };
+    byAgent[r.agent].handled++;
+    if (r.transfer) byAgent[r.agent].transfers++;
+    if (r.score !== null && r.score !== undefined) {
+      byAgent[r.agent].count++;
+      byAgent[r.agent].sum += r.score;
+      if (r.score === 5) byAgent[r.agent].fives++;
+    }
+  });
+  const agents = Object.values(byAgent).map(a => {
+    const { bonus, earnedEmojis, completedQuests } = computeAgentQuestData(a.name, from, to, team);
+    return {
+      ...a,
+      avg: a.count > 0 ? a.sum / a.count : 0,
+      pct: a.count > 0 ? (a.sum / a.count / 5) * 100 : 0,
+      // Transfer rate = transfers ÷ total handled calls
+      transferRate: a.handled > 0 ? (a.transfers / a.handled) * 100 : 0,
+      // Response rate = completions ÷ transfers
+      responseRate: a.transfers > 0 ? (a.count / a.transfers) * 100 : 0,
+      basePoints: a.fives,
+      bonusPoints: bonus,
+      totalPoints: a.fives + bonus,
+      earnedEmojis,
+      completedQuests
+    };
+  });
+
+  let board = [], title = 'Top performers', meta = 'Min 3 responses', wrapInScroll = false, showPodium = false;
+  if (currentView === 'top') {
+    board = agents.filter(a => a.count >= 3).sort((a, b) => b.avg - a.avg || b.count - a.count).slice(0, 10);
+    showPodium = true;
+  } else if (currentView === 'bottom') {
+    board = agents.filter(a => a.count >= 3).sort((a, b) => a.avg - b.avg || b.count - a.count).slice(0, 10);
+    title = 'Bottom 10 agents';
+  } else if (currentView === 'volume') {
+    board = agents.sort((a, b) => b.count - a.count).slice(0, 10);
+    title = 'Top 10 by volume';
+    meta = 'Most responses received';
+    showPodium = true;
+  } else if (currentView === 'points') {
+    board = agents.sort((a, b) => b.totalPoints - a.totalPoints || b.fives - a.fives).slice(0, 10);
+    title = 'Top 10 by points';
+    meta = '5★ + quest bonuses';
+    showPodium = true;
+  } else {
+    board = agents.sort((a, b) => b.avg - a.avg || b.count - a.count);
+    title = 'All agents';
+    meta = `${agents.length} agent${agents.length === 1 ? '' : 's'} · sorted by avg`;
+    wrapInScroll = true;
+  }
+  document.getElementById('board-title').textContent = title;
+  document.getElementById('board-meta').textContent = meta;
+
+  const podiumContainer = document.getElementById('podium-container');
+  podiumContainer.innerHTML = '';
+
+  if (showPodium && board.length >= 3) {
+    const [first, second, third] = board;
+    let scoreLabel = (a) => fmt(a.avg, 2) + ' avg';
+    if (currentView === 'volume') scoreLabel = (a) => a.count + ' responses';
+    if (currentView === 'points') scoreLabel = (a) => a.totalPoints + ' pts';
+
+    function podiumExtras(a) {
+      const pts = `<div class="podium-points">★ ${a.totalPoints} pts</div>`;
+      let badgesHtml = '<div class="podium-badges">';
+      if (a.earnedEmojis.length > 0) {
+        a.earnedEmojis.slice(0, 4).forEach(b => {
+          badgesHtml += `<span class="podium-badge" title="${escapeHtml(b.name)}">${b.emoji}</span>`;
+        });
+        if (a.earnedEmojis.length > 4) {
+          badgesHtml += `<span class="podium-badges-overflow">+${a.earnedEmojis.length - 4}</span>`;
+        }
+      }
+      badgesHtml += '</div>';
+      return pts + badgesHtml;
+    }
+
+    podiumContainer.innerHTML = `
+      <div class="podium">
+        <div class="podium-slot second">
+          <div class="podium-avatar">${getInitials(second.name)}</div>
+          <div class="podium-name">${escapeHtml(second.name)}</div>
+          <div class="podium-score">${scoreLabel(second)}</div>
+          ${podiumExtras(second)}
+          <div class="podium-rank">2</div>
+        </div>
+        <div class="podium-slot first">
+          <div class="podium-avatar">${getInitials(first.name)}</div>
+          <div class="podium-name">${escapeHtml(first.name)}</div>
+          <div class="podium-score">${scoreLabel(first)}</div>
+          ${podiumExtras(first)}
+          <div class="podium-rank">1</div>
+        </div>
+        <div class="podium-slot third">
+          <div class="podium-avatar">${getInitials(third.name)}</div>
+          <div class="podium-name">${escapeHtml(third.name)}</div>
+          <div class="podium-score">${scoreLabel(third)}</div>
+          ${podiumExtras(third)}
+          <div class="podium-rank">3</div>
+        </div>
+      </div>`;
+  }
+
+  const lb = document.getElementById('leaderboard');
+  lb.innerHTML = '';
+  if (board.length === 0) {
+    lb.innerHTML = '<div class="empty">No data for this selection. Try widening your filters.</div>';
+    return;
+  }
+  const targetEl = wrapInScroll ? document.createElement('div') : lb;
+  if (wrapInScroll) targetEl.className = 'scroll-list';
+
+  const listStart = (showPodium && board.length >= 3) ? 3 : 0;
+  const listAgents = board.slice(listStart);
+
+  listAgents.forEach((a, i) => {
+    const rank = i + 1 + listStart;
+    let avatarClass = 'avatar';
+    if (currentView === 'top' || currentView === 'all' || currentView === 'volume' || currentView === 'points') {
+      if (rank === 1) avatarClass = 'avatar gold';
+      else if (rank === 2) avatarClass = 'avatar silver';
+      else if (rank === 3) avatarClass = 'avatar bronze';
+    } else if (currentView === 'bottom' && rank === 1) {
+      avatarClass = 'avatar danger';
+    }
+
+    let primaryStat, secondaryStat;
+    if (currentView === 'volume') {
+      primaryStat = a.count;
+      secondaryStat = fmt(a.avg, 2) + ' avg';
+    } else if (currentView === 'points') {
+      primaryStat = a.totalPoints;
+      secondaryStat = a.bonusPoints > 0 ? `${a.basePoints} + ${a.bonusPoints} bonus` : `${a.basePoints} 5★`;
+    } else {
+      primaryStat = fmt(a.avg, 2);
+      // Show transfer rate + completion rate instead of the % conversion
+      const tr = a.handled > 0 ? `${fmt(a.transferRate, 0)}% transfer` : '— transfer';
+      const cr = a.transfers > 0 ? `${fmt(a.responseRate, 0)}% completion` : '— completion';
+      secondaryStat = `${tr} · ${cr}`;
+    }
+
+    const pillClass = a.bonusPoints > 0 ? 'points-pill has-bonus' : 'points-pill';
+    const pillTitle = a.bonusPoints > 0
+      ? `${a.basePoints} 5★ + ${a.bonusPoints} bonus from: ${a.completedQuests.join(', ')}`
+      : `${a.basePoints} pts from 5★ ratings`;
+    const pointsPill = `<span class="${pillClass}" title="${escapeHtml(pillTitle)}">★ ${a.totalPoints} pts</span>`;
+
+    let badgesHtml = '';
+    if (a.earnedEmojis.length > 0) {
+      badgesHtml = '<div class="row-emoji-badges">';
+      // Show all earned badges (no truncation) so the agent sees what they've won
+      a.earnedEmojis.forEach(b => {
+        badgesHtml += `<span class="row-emoji-badge" title="${escapeHtml(b.name)}"><span class="emoji">${b.emoji}</span><span class="name">${escapeHtml(b.name)}</span></span>`;
+      });
+      badgesHtml += '</div>';
+    }
+
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `
+      <div class="rank">${rank}</div>
+      <div class="${avatarClass}">${getInitials(a.name)}</div>
+      <div class="row-info">
+        <div class="row-name-line">
+          <span class="row-name">${escapeHtml(a.name)}</span>
+        </div>
+        <div class="row-sub">
+          <span>${a.count} response${a.count === 1 ? '' : 's'}</span>
+          ${pointsPill}
+        </div>
+        ${badgesHtml}
+      </div>
+      <div class="row-stats">
+        <div class="row-avg">${primaryStat}</div>
+        <div class="row-pct">${secondaryStat}</div>
+      </div>`;
+    targetEl.appendChild(row);
+  });
+  if (wrapInScroll) lb.appendChild(targetEl);
+}
+
+teamSelect.addEventListener('change', applyFilters);
+document.getElementById('from-date').addEventListener('change', applyFilters);
+document.getElementById('to-date').addEventListener('change', applyFilters);
+document.getElementById('reset-btn').addEventListener('click', () => {
+  teamSelect.value = '';
+  // Reset to today (clamped to data range)
+  const today = todayStr();
+  const clamped = (dataMinDate && today < dataMinDate) ? dataMinDate
+                 : (dataMaxDate && today > dataMaxDate) ? dataMaxDate
+                 : today;
+  document.getElementById('from-date').value = clamped;
+  document.getElementById('to-date').value = clamped;
+  applyFilters();
+});
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentView = tab.dataset.view;
+    applyFilters();
+  });
+});
+
+/* ===== ACTIVE QUESTS BANNER ===== */
+function renderActiveQuestsBanner() {
+  const banner = document.getElementById('active-quests-banner');
+  const content = document.getElementById('active-quests-content');
+  const countEl = document.getElementById('active-quests-count');
+  const today = todayStr();
+  const active = questsCache.filter(q => q.from <= today && q.to >= today);
+  if (active.length === 0) {
+    banner.classList.add('empty');
+    countEl.textContent = 'No active';
+    if (questsCache.length === 0) {
+      content.innerHTML = '<p class="active-quests-empty-text">No active quests right now. Click "Manage quests" up top to create one. Each quest gives an emoji badge + bonus points to agents who hit the target in time.</p>';
+    } else {
+      content.innerHTML = '<p class="active-quests-empty-text">No quests are currently within their active window. Check past or upcoming quests on the Manage quests page.</p>';
+    }
+    return;
+  }
+  banner.classList.remove('empty');
+  countEl.textContent = `${active.length} active`;
+
+  // Group by category, ordered by stored category list
+  const groups = new Map();
+  for (const q of active) {
+    const cat = q.category || 'Quest';
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(q);
+  }
+  const orderedCats = [];
+  for (const c of categoriesCache) if (groups.has(c)) orderedCats.push(c);
+  for (const c of [...groups.keys()].sort()) if (!orderedCats.includes(c)) orderedCats.push(c);
+
+  function fmtTarget(q) {
+    if (q.type === 'transfers') return `${q.target}% transfer rate`;
+    if (q.type === 'completions') return `${q.target}% completion rate`;
+    return `${q.target} × 5★`;
+  }
+
+  let html = '';
+  orderedCats.forEach(cat => {
+    html += `<div class="quest-side-cat-group">`;
+    html += `<div class="quest-side-cat-heading">${escapeHtml(cat)}</div>`;
+    groups.get(cat).forEach(q => {
+      html += `
+        <div class="quest-card-mini">
+          <div class="quest-card-mini-top">
+            <div class="quest-card-mini-emoji">${q.emoji}</div>
+            <div class="quest-card-mini-name">${escapeHtml(q.name)}</div>
+            <div class="quest-card-mini-pts">+${q.points}</div>
+          </div>
+          <div class="quest-card-mini-meta">${fmtTarget(q)}<br>${fmtDate(q.from)} – ${fmtDate(q.to)}${q.team ? `<br><strong>${escapeHtml(q.team)} only</strong>` : ''}</div>
+        </div>`;
+    });
+    html += `</div>`;
+  });
+  content.innerHTML = html;
+}
+
+/* ===== PASSWORD LOCK ===== */
+const SESSION_UNLOCK_KEY = 'questUnlocked';
+function isUnlocked() {
+  try { return sessionStorage.getItem(SESSION_UNLOCK_KEY) === '1'; } catch (e) { return false; }
+}
+function setUnlocked(v) {
+  try {
+    if (v) sessionStorage.setItem(SESSION_UNLOCK_KEY, '1');
+    else sessionStorage.removeItem(SESSION_UNLOCK_KEY);
+  } catch (e) {}
+}
+function showUnlocked() {
+  document.getElementById('quest-locked').classList.add('hidden');
+  document.getElementById('quest-content').classList.remove('hidden');
+}
+function showLocked() {
+  document.getElementById('quest-locked').classList.remove('hidden');
+  document.getElementById('quest-content').classList.add('hidden');
+  document.getElementById('lock-pw').value = '';
+  document.getElementById('lock-error').textContent = '';
+}
+
+document.getElementById('lock-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const pw = document.getElementById('lock-pw').value;
+  const errEl = document.getElementById('lock-error');
+  if (pw === QUEST_PASSWORD) {
+    setUnlocked(true);
+    errEl.textContent = '';
+    showUnlocked();
+  } else {
+    errEl.textContent = 'Incorrect password.';
+    document.getElementById('lock-pw').value = '';
+  }
+});
+
+document.getElementById('hide-quests-btn').addEventListener('click', () => {
+  setUnlocked(false);
+  showLocked();
+});
+
+/* ===== EMOJI PICKER ===== */
+function renderEmojiPicker() {
+  const wrap = document.getElementById('q-emoji-pick');
+  wrap.innerHTML = '';
+  EMOJI_OPTIONS.forEach(emoji => {
+    const label = document.createElement('label');
+    label.textContent = emoji;
+    label.dataset.emoji = emoji;
+    if (emoji === selectedEmoji) label.classList.add('selected');
+    label.addEventListener('click', () => {
+      selectedEmoji = emoji;
+      wrap.querySelectorAll('label').forEach(l => l.classList.remove('selected'));
+      label.classList.add('selected');
+    });
+    wrap.appendChild(label);
+  });
+}
+
+/* ===== STORAGE =====
+   Primary: localStorage (works in any browser, persists across reloads).
+   Fallback: window.storage (Anthropic Artifact environment).
+   Quests are stored as a single JSON array under one key — simpler than
+   one-key-per-quest. Categories are a separate JSON array.
+*/
+const QUESTS_LS_KEY = 'csat_dashboard_quests_v1';
+const CATEGORIES_LS_KEY = 'csat_dashboard_categories_v1';
+const DEFAULT_CATEGORIES = ['Quest', 'Side Mission'];
+let categoriesCache = [...DEFAULT_CATEGORIES];
+
+// Detect localStorage availability (some browsers/private modes block it).
+const hasLocalStorage = (() => {
+  try {
+    const k = '__csat_test__';
+    window.localStorage.setItem(k, '1');
+    window.localStorage.removeItem(k);
+    return true;
+  } catch (e) { return false; }
+})();
+
+async function loadCategories() {
+  if (hasLocalStorage) {
+    try {
+      const raw = window.localStorage.getItem(CATEGORIES_LS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) categoriesCache = parsed;
+      }
+    } catch (e) { console.warn('loadCategories error', e); }
+  }
+  for (const d of DEFAULT_CATEGORIES) {
+    if (!categoriesCache.includes(d)) categoriesCache.unshift(d);
+  }
+  return categoriesCache;
+}
+
+async function saveCategories() {
+  if (hasLocalStorage) {
+    try { window.localStorage.setItem(CATEGORIES_LS_KEY, JSON.stringify(categoriesCache)); }
+    catch (e) { console.error('saveCategories error', e); }
+  }
+}
+
+async function addCategory(name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return false;
+  if (categoriesCache.some(c => c.toLowerCase() === trimmed.toLowerCase())) return false;
+  categoriesCache.push(trimmed);
+  await saveCategories();
+  return true;
+}
+
+async function loadQuests() {
+  if (hasLocalStorage) {
+    try {
+      const raw = window.localStorage.getItem(QUESTS_LS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const q of parsed) if (!q.emoji) q.emoji = '⭐';
+          parsed.sort((a, b) => (b.created || 0) - (a.created || 0));
+          questsCache = parsed;
+          return parsed;
+        }
+      }
+    } catch (e) { console.warn('loadQuests error', e); }
+  }
+  return questsCache;
+}
+
+async function persistAllQuests() {
+  if (hasLocalStorage) {
+    try { window.localStorage.setItem(QUESTS_LS_KEY, JSON.stringify(questsCache)); }
+    catch (e) { console.error('persistAllQuests error', e); }
+  }
+}
+
+async function saveQuest(quest) {
+  const idx = questsCache.findIndex(q => q.id === quest.id);
+  if (idx >= 0) questsCache[idx] = quest;
+  else questsCache.unshift(quest);
+  await persistAllQuests();
+}
+
+async function deleteQuestById(id) {
+  questsCache = questsCache.filter(q => q.id !== id);
+  await persistAllQuests();
+}
+
+/* ===== QUESTS UI ===== */
+function getQuestStatus(q) {
+  const today = todayStr();
+  if (q.to < today) return 'expired';
+  if (q.from > today) return 'upcoming';
+  return 'active';
+}
+
+function computeQuestStats(quest) {
+  const type = quest.type || '5star';
+  // Team-scoped quest: only count rows from agents on that team.
+  // Empty quest.team means "all teams" so no filtering.
+  const inWindow = DATA.filter(r => {
+    if (r.date < quest.from || r.date > quest.to) return false;
+    if (quest.team && r.team !== quest.team) return false;
+    return true;
+  });
+
+  // Walk all rows once and bucket by agent into all four counters.
+  const byAgent = {};
+  inWindow.forEach(r => {
+    if (!byAgent[r.agent]) byAgent[r.agent] = { handled: 0, transfers: 0, fives: 0, completions: 0 };
+    byAgent[r.agent].handled++;
+    if (r.transfer) byAgent[r.agent].transfers++;
+    if (r.score === 5) byAgent[r.agent].fives++;
+    if (r.transfer && r.score !== null && r.score !== undefined) byAgent[r.agent].completions++;
+  });
+
+  // Build leader entries depending on quest type.
+  let leaders;
+  let totalRelevant;
+  if (type === 'transfers') {
+    leaders = Object.entries(byAgent).map(([name, c]) => {
+      const rate = c.handled > 0 ? (c.transfers / c.handled) * 100 : 0;
+      return {
+        name,
+        count: c.transfers,
+        rate,
+        denom: c.handled,
+        complete: rate >= quest.target
+      };
+    }).sort((a, b) => b.rate - a.rate || b.count - a.count);
+    totalRelevant = inWindow.filter(r => r.transfer).length;
+  } else if (type === 'completions') {
+    leaders = Object.entries(byAgent).map(([name, c]) => {
+      const rate = c.transfers > 0 ? (c.completions / c.transfers) * 100 : 0;
+      return {
+        name,
+        count: c.completions,
+        rate,
+        denom: c.transfers,
+        complete: rate >= quest.target
+      };
+    }).sort((a, b) => b.rate - a.rate || b.count - a.count);
+    totalRelevant = inWindow.filter(r => r.transfer && r.score !== null && r.score !== undefined).length;
+  } else {
+    // 5-star count quest (raw count target)
+    leaders = Object.entries(byAgent).map(([name, c]) => ({
+      name, count: c.fives, complete: c.fives >= quest.target
+    })).sort((a, b) => b.count - a.count);
+    totalRelevant = inWindow.filter(r => r.score === 5).length;
+  }
+
+  // Drop entries with zero contribution so we don't pollute the list with
+  // every agent who happened to take a call but had no transfers/5★ etc.
+  leaders = leaders.filter(l => (l.count > 0) || (l.denom != null && l.denom > 0));
+
+  const completed = leaders.filter(l => l.complete);
+  return { leaders, completed, totalRelevant, type };
+}
+
+function updateQuestCounts() {
+  const counts = { all: questsCache.length, active: 0, upcoming: 0, expired: 0 };
+  questsCache.forEach(q => { counts[getQuestStatus(q)]++; });
+  document.getElementById('ct-all').textContent = counts.all;
+  document.getElementById('ct-active').textContent = counts.active;
+  document.getElementById('ct-upcoming').textContent = counts.upcoming;
+  document.getElementById('ct-expired').textContent = counts.expired;
+  document.getElementById('quests-count').textContent =
+    `${counts.all} quest${counts.all === 1 ? '' : 's'}`;
+}
+
+function renderQuests() {
+  updateQuestCounts();
+  const list = document.getElementById('quests-list');
+  list.innerHTML = '';
+
+  let filtered = questsCache.slice();
+  if (currentQuestFilter !== 'all') {
+    filtered = filtered.filter(q => getQuestStatus(q) === currentQuestFilter);
+  }
+
+  if (filtered.length === 0) {
+    if (questsCache.length === 0) {
+      list.innerHTML = '<div class="empty-state"><h3>No quests yet</h3>Create one above to start awarding badges and bonus points to your team.</div>';
+    } else {
+      list.innerHTML = `<div class="empty-state"><h3>No ${currentQuestFilter} quests</h3>Switch to a different filter or create a new quest above.</div>`;
+    }
+    return;
+  }
+
+  // Group filtered quests by category. Order: known categories first
+  // (in their stored order), then any straggler categories alphabetically.
+  const groups = new Map();
+  for (const q of filtered) {
+    const cat = q.category || 'Quest';
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(q);
+  }
+  const orderedCats = [];
+  for (const c of categoriesCache) if (groups.has(c)) orderedCats.push(c);
+  for (const c of [...groups.keys()].sort()) if (!orderedCats.includes(c)) orderedCats.push(c);
+
+  orderedCats.forEach(category => {
+    // Section heading
+    const heading = document.createElement('div');
+    heading.className = 'quest-category-heading';
+    const items = groups.get(category);
+    heading.innerHTML = `<h3>${escapeHtml(category)}<span class="quest-cat-count">${items.length}</span></h3>`;
+    list.appendChild(heading);
+
+    items.forEach(q => {
+      const stats = computeQuestStats(q);
+      const status = getQuestStatus(q);
+      const card = document.createElement('div');
+      card.className = 'quest-card' + (stats.completed.length > 0 ? ' complete' : '') + (status === 'expired' ? ' expired' : '');
+
+      let statusText, statusClass;
+      if (stats.completed.length > 0) {
+        statusText = `${stats.completed.length} winner${stats.completed.length === 1 ? '' : 's'}`;
+        statusClass = 'complete';
+      } else if (status === 'expired') {
+        statusText = 'Expired'; statusClass = 'expired';
+      } else if (status === 'upcoming') {
+        statusText = 'Upcoming'; statusClass = 'upcoming';
+      } else {
+        statusText = 'Active'; statusClass = '';
+      }
+
+      const topAgent = stats.leaders[0];
+      const type = stats.type;
+      const isPercent = (type === 'transfers' || type === 'completions');
+
+      // Top number for headline + progress bar
+      const topMetric = topAgent ? (isPercent ? topAgent.rate : topAgent.count) : 0;
+      const progressPct = Math.min(100, (topMetric / q.target) * 100);
+
+      const targetLabel = type === 'transfers' ? 'transfers' : type === 'completions' ? 'completed CSATs' : '5★ ratings';
+      const targetLabelShort = type === 'transfers' ? 'transfer rate' : type === 'completions' ? 'completion rate' : '5★';
+      const targetDisplay = isPercent ? `${q.target}%` : `${q.target} ${targetLabelShort}`;
+
+      let leadersHtml = '';
+      if (stats.leaders.length > 0) {
+        leadersHtml = '<div class="quest-leaders"><div class="quest-leader-label">Top contenders</div>';
+        stats.leaders.slice(0, 5).forEach((l, i) => {
+          const earned = l.complete ? ` ${q.emoji}` : '';
+          // For percentage quests show "X% (n/N) · target"; for raw count, "n / target"
+          const statsLine = isPercent
+            ? `<strong>${l.rate.toFixed(1)}%</strong> <span style="opacity:.6">(${l.count}/${l.denom})</span> · ${l.complete ? `<strong>+${q.points} pts</strong>` : '—'}`
+            : `<strong>${l.count}</strong> / ${q.target} · ${l.complete ? `<strong>+${q.points} pts</strong>` : '—'}`;
+          leadersHtml += `
+            <div class="quest-leader-row">
+              <div class="quest-leader-rank">${i + 1}</div>
+              <div class="quest-leader-name">${escapeHtml(l.name)}${earned}</div>
+              <div class="quest-leader-stats">${statsLine}</div>
+            </div>`;
+        });
+        leadersHtml += '</div>';
+      } else {
+        leadersHtml = `<div class="quest-leaders"><div class="quest-leader-label">No ${targetLabel} in this period yet</div></div>`;
+      }
+
+      // Leader summary: "Alice (62.5%)" for % quests, "Alice (12)" for count quests
+      const leaderText = topAgent
+        ? `${escapeHtml(topAgent.name)} (${isPercent ? topAgent.rate.toFixed(1) + '%' : topAgent.count})`
+        : '—';
+      const totalLine = isPercent
+        ? `${stats.totalRelevant} ${type === 'transfers' ? 'transfers' : 'completions'} in period`
+        : `${stats.totalRelevant} total ${targetLabelShort} in period`;
+
+    card.innerHTML = `
+      <div class="quest-top">
+        <div class="quest-emoji-circle">${q.emoji}</div>
+        <div class="quest-title-block">
+          <h3 class="quest-title">${escapeHtml(q.name)}</h3>
+          <div class="quest-meta">${fmtDate(q.from)} – ${fmtDate(q.to)} · Target ${targetDisplay} · +${q.points} bonus pts${q.team ? ` · <strong>${escapeHtml(q.team)} only</strong>` : ''}</div>
+        </div>
+        <div class="quest-status-badge ${statusClass}">${statusText}</div>
+      </div>
+      <div class="quest-progress-bar">
+        <div class="quest-progress-fill ${progressPct < 100 ? 'partial' : ''}" style="width: ${progressPct}%"></div>
+      </div>
+      <div class="quest-stats">
+        <span>Leader: <strong>${leaderText}</strong></span>
+        <span>${totalLine}</span>
+      </div>
+      ${leadersHtml}
+      <div class="quest-actions">
+        <button class="small-btn edit-quest" data-id="${q.id}">Edit</button>
+        <button class="small-btn delete delete-quest" data-id="${q.id}">Delete</button>
+      </div>`;
+      list.appendChild(card);
+    });
+  });
+
+  list.querySelectorAll('.delete-quest').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.target.dataset.id;
+      const q = questsCache.find(x => x.id === id);
+      if (!q) return;
+      if (!confirm(`Delete the quest "${q.name}"? This cannot be undone.`)) return;
+      e.target.disabled = true;
+      await deleteQuestById(id);
+      renderQuests();
+      renderActiveQuestsBanner();
+      applyFilters();
+    });
+  });
+  list.querySelectorAll('.edit-quest').forEach(btn => {
+    btn.addEventListener('click', (e) => { startEditQuest(e.target.dataset.id); });
+  });
+}
+
+document.querySelectorAll('.quest-filter-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.quest-filter-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    currentQuestFilter = t.dataset.filter;
+    renderQuests();
+  });
+});
+
+function populateCategoryDropdown(selected) {
+  const sel = document.getElementById('q-category');
+  if (!sel) return;
+  const current = selected != null ? selected : sel.value;
+  sel.innerHTML = '';
+  for (const c of categoriesCache) {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  }
+  const addOpt = document.createElement('option');
+  addOpt.value = '__add__';
+  addOpt.textContent = '+ Add new category…';
+  sel.appendChild(addOpt);
+  // Restore selection
+  if (current && current !== '__add__' && categoriesCache.includes(current)) {
+    sel.value = current;
+  } else {
+    sel.value = categoriesCache[0] || 'Quest';
+  }
+}
+
+/* Populate the quest-form Team dropdown from teams seen in the data.
+   The empty-string value means "All teams". */
+function populateTeamDropdown(selected) {
+  const sel = document.getElementById('q-team');
+  if (!sel) return;
+  const teams = [...new Set(DATA.map(r => r.team).filter(t => t))].sort();
+  sel.innerHTML = '<option value="">All teams</option>';
+  for (const t of teams) {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    sel.appendChild(opt);
+  }
+  // If the quest's selected team isn't currently in the data (rare, but
+  // possible if the data is filtered or a team was renamed), still keep it
+  // as an option so the user sees what was saved.
+  if (selected && !teams.includes(selected)) {
+    const opt = document.createElement('option');
+    opt.value = selected;
+    opt.textContent = selected + ' (not in current data)';
+    sel.appendChild(opt);
+  }
+  sel.value = selected || '';
+}
+
+function startEditQuest(id) {
+  const q = questsCache.find(x => x.id === id);
+  if (!q) return;
+  editingQuestId = id;
+  document.getElementById('q-name').value = q.name;
+  document.getElementById('q-target').value = q.target;
+  document.getElementById('q-points').value = q.points;
+  document.getElementById('q-from').value = q.from;
+  document.getElementById('q-to').value = q.to;
+  document.getElementById('q-type').value = q.type || '5star';
+  // Make sure the quest's category is in the dropdown (it could be a custom one
+  // that was added on a different device or removed since)
+  const cat = q.category || 'Quest';
+  if (!categoriesCache.includes(cat)) {
+    categoriesCache.push(cat);
+  }
+  populateCategoryDropdown(cat);
+  populateTeamDropdown(q.team || '');
+  updateTargetLabel();
+  selectedEmoji = q.emoji;
+  renderEmojiPicker();
+  document.getElementById('form-mode-title').textContent = 'Edit quest';
+  document.getElementById('q-create').textContent = 'Save changes';
+  document.getElementById('q-cancel').classList.remove('hidden');
+  document.querySelector('.form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelEditQuest() {
+  editingQuestId = null;
+  document.getElementById('q-name').value = '';
+  document.getElementById('q-target').value = '';
+  document.getElementById('q-points').value = '';
+  document.getElementById('q-from').value = '2026-04-01';
+  document.getElementById('q-to').value = '2026-04-30';
+  document.getElementById('q-type').value = '5star';
+  populateCategoryDropdown('Quest');
+  populateTeamDropdown('');
+  updateTargetLabel();
+  selectedEmoji = '⭐';
+  renderEmojiPicker();
+  document.getElementById('form-mode-title').textContent = 'Create a new quest';
+  document.getElementById('q-create').textContent = 'Create quest';
+  document.getElementById('q-cancel').classList.add('hidden');
+  document.getElementById('q-error').textContent = '';
+}
+
+function updateTargetLabel() {
+  const type = document.getElementById('q-type').value;
+  const label = document.getElementById('q-target-label');
+  const input = document.getElementById('q-target');
+  if (!label || !input) return;
+  if (type === 'transfers') {
+    label.textContent = 'Transfer rate target (%)';
+    input.max = 100;
+    input.placeholder = '80';
+  } else if (type === 'completions') {
+    label.textContent = 'Completion rate target (%)';
+    input.max = 100;
+    input.placeholder = '70';
+  } else {
+    label.textContent = 'Total 5 stars required';
+    input.max = 500;
+    input.placeholder = '10';
+  }
+}
+
+// Handle "+ Add new category…" — prompt, persist, refresh dropdown, select it.
+document.getElementById('q-category').addEventListener('change', async (e) => {
+  if (e.target.value !== '__add__') return;
+  const name = window.prompt('Name for the new category:');
+  if (!name || !name.trim()) {
+    populateCategoryDropdown(categoriesCache[0]);
+    return;
+  }
+  const ok = await addCategory(name);
+  if (!ok) {
+    alert('That category already exists or the name was invalid.');
+    populateCategoryDropdown(categoriesCache[0]);
+    return;
+  }
+  populateCategoryDropdown(name.trim());
+});
+
+document.getElementById('q-cancel').addEventListener('click', cancelEditQuest);
+document.getElementById('q-type').addEventListener('change', updateTargetLabel);
+
+document.getElementById('q-create').addEventListener('click', async () => {
+  const name = document.getElementById('q-name').value.trim();
+  const target = parseInt(document.getElementById('q-target').value, 10);
+  const points = parseInt(document.getElementById('q-points').value, 10);
+  const from = document.getElementById('q-from').value;
+  const to = document.getElementById('q-to').value;
+  const type = document.getElementById('q-type').value || '5star';
+  let category = document.getElementById('q-category').value || 'Quest';
+  // Guard: if somehow the "+ Add new" sentinel is still selected, fall back
+  if (category === '__add__') category = 'Quest';
+  const teamScope = document.getElementById('q-team').value || ''; // '' = all teams
+  const errEl = document.getElementById('q-error');
+  errEl.textContent = '';
+  if (!name) return errEl.textContent = 'Give the quest a name.';
+  if (!Number.isFinite(target) || target < 1) return errEl.textContent = 'Target must be at least 1.';
+  if ((type === 'transfers' || type === 'completions') && target > 100) {
+    return errEl.textContent = 'Percentage target cannot exceed 100.';
+  }
+  if (!Number.isFinite(points) || points < 1) return errEl.textContent = 'Points must be at least 1.';
+  if (!from || !to) return errEl.textContent = 'Pick a start and end date.';
+  if (from > to) return errEl.textContent = 'Start date must be on or before end date.';
+
+  const btn = document.getElementById('q-create');
+  btn.disabled = true;
+  btn.textContent = editingQuestId ? 'Saving…' : 'Creating…';
+
+  let quest;
+  if (editingQuestId) {
+    const existing = questsCache.find(x => x.id === editingQuestId);
+    quest = { ...existing, name, emoji: selectedEmoji, category, type, team: teamScope, target, points, from, to, updated: Date.now() };
+  } else {
+    quest = {
+      id: 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      name, emoji: selectedEmoji, category, type, team: teamScope, target, points, from, to, created: Date.now()
+    };
+  }
+  await saveQuest(quest);
+  cancelEditQuest();
+  btn.disabled = false;
+  // Refresh everything
+  renderQuests();
+  renderActiveQuestsBanner();
+  applyFilters();
+});
+
+/* ===== DATA LOADER ===== */
+function setStatus(state, label) {
+  const el = document.getElementById('data-status');
+  if (!el) return;
+  el.className = 'data-status ' + state;
+  el.textContent = label;
+  el.title = label;
+}
+
+async function loadDataFromSheet({ silent = false } = {}) {
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) refreshBtn.classList.add('spinning');
+  if (!silent) setStatus('loading', 'Loading…');
+  try {
+    const records = await fetchSheetData();
+    DATA = records;
+    // Refresh team dropdown options based on new data
+    const newTeams = [...new Set(DATA.map(r => r.team).filter(t => t))].sort();
+    newTeams.unshift('(no team)');
+    const sel = document.getElementById('team-select');
+    const currentVal = sel.value;
+    sel.innerHTML = '<option value="">All teams</option>';
+    newTeams.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t === '(no team)' ? '__NONE__' : t;
+      opt.textContent = t;
+      sel.appendChild(opt);
+    });
+    // Restore selection if still valid
+    if (currentVal && [...sel.options].some(o => o.value === currentVal)) sel.value = currentVal;
+
+    // Refresh the quest-form Team dropdown too (preserve current selection)
+    const qTeamSel = document.getElementById('q-team');
+    populateTeamDropdown(qTeamSel ? qTeamSel.value : '');
+
+    // Adjust date filter bounds to actual data range
+    const allDates = DATA.map(r => r.date).sort();
+    if (allDates.length > 0) {
+      dataMinDate = allDates[0];
+      dataMaxDate = allDates[allDates.length - 1];
+      const fromInput = document.getElementById('from-date');
+      const toInput = document.getElementById('to-date');
+      fromInput.min = dataMinDate; fromInput.max = dataMaxDate;
+      toInput.min = dataMinDate; toInput.max = dataMaxDate;
+      // On first successful load, default the filter to TODAY (clamped to
+      // the available data range). Manual/auto refreshes after that preserve
+      // whatever the user has selected so we don't yank their view.
+      if (!firstLoadDone) {
+        const today = todayStr();
+        const clamped = today < dataMinDate ? dataMinDate
+                       : today > dataMaxDate ? dataMaxDate
+                       : today;
+        fromInput.value = clamped;
+        toInput.value = clamped;
+        firstLoadDone = true;
+      }
+    }
+    setStatus('live', `Live · ${DATA.length} records`);
+    return true;
+  } catch (e) {
+    console.error('Sheet fetch failed:', e);
+    setStatus('error', 'Offline (using cached data)');
+    return false;
+  } finally {
+    if (refreshBtn) refreshBtn.classList.remove('spinning');
+  }
+}
+
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  await loadDataFromSheet();
+  applyFilters();
+  renderActiveQuestsBanner();
+  renderQuests();
+});
+
+/* ===== INIT ===== */
+async function init() {
+  renderEmojiPicker();
+  setStatus('loading', 'Loading…');
+  // Kick off all of these in parallel; sheet fetch + quests + categories
+  const [_q, _sheet, _cats] = await Promise.all([
+    loadQuests(),
+    loadDataFromSheet({ silent: true }),
+    loadCategories()
+  ]);
+  populateCategoryDropdown('Quest');
+  populateTeamDropdown('');
+  applyFilters();
+  renderActiveQuestsBanner();
+  renderQuests();
+  if (isUnlocked()) showUnlocked();
+  else showLocked();
+}
+init();
+
+/* Silent auto-refresh every 5 minutes. Uses {silent:true} so the status pill
+   doesn't flash "Loading…" — it stays "Live" and just updates the count
+   when the new data lands. Manual refresh still flashes for feedback. */
+setInterval(async () => {
+  // Skip if a manual refresh is already in flight
+  const btn = document.getElementById('refresh-btn');
+  if (btn && btn.classList && btn.classList.contains('spinning')) return;
+  try {
+    const ok = await loadDataFromSheet({ silent: true });
+    if (ok) {
+      applyFilters();
+      renderActiveQuestsBanner();
+      renderQuests();
+    }
+  } catch (e) {
+    console.error('Auto-refresh error:', e);
+  }
+}, 5 * 60 * 1000);
+</script>
+</body>
+</html>
